@@ -72,6 +72,7 @@ const META_COMMANDS: &[&str] = &[
     "run",
     "delbookmark",
     "conninfo",
+    "reconnect",
     "cd",
     "?",
     "h",
