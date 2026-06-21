@@ -41,6 +41,7 @@ jobs:
             artifact_archive: pgcli-rs_linux_x86_64.tar.gz
             archive_type: tar
             use_cross: false
+            cargo_features: "--no-default-features --features rustls-backend"
 
           # -- Linux aarch64 - static musl (cross + Docker) ---------------------
           - os: ubuntu-latest
@@ -49,6 +50,7 @@ jobs:
             artifact_archive: pgcli-rs_linux_aarch64.tar.gz
             archive_type: tar
             use_cross: true
+            cargo_features: "--no-default-features --features rustls-backend"
 
           # -- Android aarch64 - bionic libc (Termux) ---------------------------
           - os: ubuntu-latest
@@ -57,6 +59,7 @@ jobs:
             artifact_archive: pgcli-rs_android_aarch64.tar.gz
             archive_type: tar
             use_cross: true
+            cargo_features: "--no-default-features --features rustls-backend"
 
           # -- Linux armv7 - static musl (cross + Docker) -----------------------
           - os: ubuntu-latest
@@ -65,6 +68,7 @@ jobs:
             artifact_archive: pgcli-rs_linux_armv7.tar.gz
             archive_type: tar
             use_cross: true
+            cargo_features: "--no-default-features --features rustls-backend"
 
           # -- Linux 386 - static musl (cross + Docker) -------------------------
           - os: ubuntu-latest
@@ -73,6 +77,7 @@ jobs:
             artifact_archive: pgcli-rs_linux_386.tar.gz
             archive_type: tar
             use_cross: true
+            cargo_features: "--no-default-features --features rustls-backend"
 
           # -- Linux riscv64 - gnu (no stable musl target) -----------------------
           - os: ubuntu-latest
@@ -81,6 +86,7 @@ jobs:
             artifact_archive: pgcli-rs_linux_riscv64.tar.gz
             archive_type: tar
             use_cross: true
+            cargo_features: "--no-default-features --features rustls-backend"
 
           # -- Linux s390x - gnu (IBM Z mainframe) -------------------------------
           - os: ubuntu-latest
@@ -89,6 +95,7 @@ jobs:
             artifact_archive: pgcli-rs_linux_s390x.tar.gz
             archive_type: tar
             use_cross: true
+            cargo_features: "--no-default-features --features rustls-backend"
 
           # -- Linux ppc64le - gnu (IBM POWER LE) -------------------------------
           - os: ubuntu-latest
@@ -97,6 +104,7 @@ jobs:
             artifact_archive: pgcli-rs_linux_ppc64le.tar.gz
             archive_type: tar
             use_cross: true
+            cargo_features: "--no-default-features --features rustls-backend"
 
           # -- macOS x86_64 (Intel) ----------------------------------------------
           - os: macos-latest
@@ -105,6 +113,7 @@ jobs:
             artifact_archive: pgcli-rs_darwin_x86_64.tar.gz
             archive_type: tar
             use_cross: false
+            cargo_features: ""
 
           # -- macOS aarch64 (Apple Silicon) -------------------------------------
           - os: macos-latest
@@ -113,6 +122,7 @@ jobs:
             artifact_archive: pgcli-rs_darwin_aarch64.tar.gz
             archive_type: tar
             use_cross: false
+            cargo_features: ""
 
           # -- Windows x86_64 (MSVC) ---------------------------------------------
           - os: windows-latest
@@ -121,6 +131,7 @@ jobs:
             artifact_archive: pgcli-rs_windows_x86_64.zip
             archive_type: zip
             use_cross: false
+            cargo_features: ""
 
           # -- Windows arm64 (MSVC cross-compile) -------------------------------
           - os: windows-latest
@@ -129,6 +140,7 @@ jobs:
             artifact_archive: pgcli-rs_windows_arm64.zip
             archive_type: zip
             use_cross: false
+            cargo_features: ""
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
@@ -181,11 +193,11 @@ jobs:
 
       - name: Build binary (cross - Docker QEMU)
         if: matrix.use_cross
-        run: cross build --release --locked --target ${{ matrix.target }}
+        run: cross build --release --locked --target ${{ matrix.target }} ${{ matrix.cargo_features }}
 
       - name: Build binary (cargo - native)
         if: "!matrix.use_cross"
-        run: cargo build --release --locked --target ${{ matrix.target }}
+        run: cargo build --release --locked --target ${{ matrix.target }} ${{ matrix.cargo_features }}
 
       # -- Package compressed archive --------------------------------------------
 
