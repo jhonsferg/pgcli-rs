@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["pgcli-rs contributors"]
 description = "A self-contained PostgreSQL CLI client written in pure Rust"
 license = "MIT"
-repository = "https://github.com/pgcli-rs/pgcli-rs"
+repository = "https://github.com/jhonsferg/pgcli-rs"
 keywords = ["postgresql", "cli", "database", "psql"]
 categories = ["command-line-utilities", "database"]
 
