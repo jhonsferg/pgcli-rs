@@ -1,0 +1,122 @@
+# -- Rust / Cargo --------------------------------------------------------------
+/target/
+**/*.rs.bk
+*.pdb
+
+# -- Secrets and certificates --------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# -- Editors -------------------------------------------------------------------
+# JetBrains (CLion, IntelliJ, RustRover)
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Visual Studio Code (keep recommended extensions list if committed by team)
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+
+# Vim / Neovim
+*.swp
+*.swo
+*.swn
+.vim/
+Session.vim
+.netrwhist
+
+# Emacs
+*~
+\#*\#
+.\#*
+.dir-locals.el
+
+# Sublime Text
+*.sublime-workspace
+*.sublime-project
+
+# -- OS metadata ---------------------------------------------------------------
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+.fuse_hidden*
+.Trash-*
+.nfs*
+
+# -- Logs and temporary files --------------------------------------------------
+*.log
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+*.patch
+
+# Compatibility-matrix test logs (written by scripts/test-compat.sh)
+target/compat-pg*.log
+
+# -- Build / release artifacts -------------------------------------------------
+dist/
+release/
+*.tar.gz
+*.tar.xz
+*.zip
+*.deb
+*.rpm
+*.AppImage
+
+# -- Test and coverage artifacts -----------------------------------------------
+coverage/
+tarpaulin-report.html
+lcov.info
+*.profraw
+*.profdata
+cobertura.xml
+
+# Criterion benchmark results (large; regenerated locally)
+/target/criterion/
+
+# -- Database / SQLite (local test databases) ----------------------------------
+*.db
+*.sqlite
+*.sqlite3
+
+# -- Docker local overrides ----------------------------------------------------
+docker-compose.override.yml
+docker-compose.local.yml
+
+# -- Python (helper/automation scripts) ----------------------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+
+# -- Node (if docs tooling ever added) -----------------------------------------
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# -- Cargo.lock policy --------------------------------------------------------
+# Binaries: lock file is committed so reproducible builds work in CI.
+# (Remove this comment and add Cargo.lock below if converting to a library.)
