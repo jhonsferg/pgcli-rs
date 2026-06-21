@@ -1,0 +1,20 @@
+[target.aarch64-linux-android]
+pre-build = [
+  "echo 'void _Unwind_Resume(void*e){}' > /tmp/u.c",
+  "echo 'long _Unwind_GetIP(void*c){return 0;}' >> /tmp/u.c",
+  "echo 'long _Unwind_GetIPInfo(void*c,int*b){return 0;}' >> /tmp/u.c",
+  "echo 'long _Unwind_GetLanguageSpecificData(void*c){return 0;}' >> /tmp/u.c",
+  "echo 'long _Unwind_GetRegionStart(void*c){return 0;}' >> /tmp/u.c",
+  "echo 'void _Unwind_SetGR(void*c,int r,long v){}' >> /tmp/u.c",
+  "echo 'void _Unwind_SetIP(void*c,long v){}' >> /tmp/u.c",
+  "echo 'int _Unwind_Backtrace(void*c,void*a){return 5;}' >> /tmp/u.c",
+  "echo 'long _Unwind_GetTextRelBase(void*c){return 0;}' >> /tmp/u.c",
+  "echo 'long _Unwind_GetDataRelBase(void*c){return 0;}' >> /tmp/u.c",
+  "echo 'long _Unwind_GetCFA(void*c){return 0;}' >> /tmp/u.c",
+  "echo 'long _Unwind_FindEnclosingFunction(void*p){return 0;}' >> /tmp/u.c",
+  "echo 'long _Unwind_GetGR(void*c,int r){return 0;}' >> /tmp/u.c",
+  "echo 'int _Unwind_RaiseException(void*e){return 9;}' >> /tmp/u.c",
+  "echo 'void _Unwind_DeleteException(void*e){}' >> /tmp/u.c",
+  "aarch64-linux-android-clang -c /tmp/u.c -o /tmp/u.o",
+  "ar rcs /android-ndk/lib/gcc/aarch64-linux-android/4.9.x/libunwind.a /tmp/u.o"
+]
