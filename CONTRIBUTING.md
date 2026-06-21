@@ -11,7 +11,7 @@ rustup update stable
 Clone the repo and build:
 
 ```sh
-git clone https://github.com/pgcli-rs/pgcli-rs
+git clone https://github.com/jhonsferg/pgcli-rs
 cd pgcli-rs
 cargo build
 ```
