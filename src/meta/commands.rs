@@ -305,6 +305,14 @@ impl MetaCommandDispatcher {
                 Ok(MetaResult::Reconnect { dbname, user, host, port })
             }
 
+            // Reconnect to the same server (e.g. after a connection drop).
+            "reconnect" => Ok(MetaResult::Reconnect {
+                dbname: None,
+                user: None,
+                host: None,
+                port: None,
+            }),
+
             "conninfo" => Ok(MetaResult::Query(conninfo_query())),
 
             "password" => {
