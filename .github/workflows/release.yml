@@ -189,20 +189,22 @@ jobs:
         if: matrix.use_cross
         run: cargo install cross --locked
 
-      # Vendor OpenSSL from source so any transitive openssl-sys dep can link
-      # statically without requiring host OpenSSL headers (needed for musl/cross).
-      - name: Enable vendored OpenSSL for Linux targets
-        if: matrix.os == 'ubuntu-latest'
-        run: echo "OPENSSL_VENDORED=1" >> $GITHUB_ENV
-
       # -- Compile ---------------------------------------------------------------
 
+      # OPENSSL_VENDORED=1 forces openssl-sys to compile OpenSSL from source,
+      # enabling static linking for musl and cross targets where no host
+      # OpenSSL headers are available. Safe on macOS/Windows (native-tls
+      # does not use OpenSSL on those platforms).
       - name: Build binary (cross - Docker QEMU)
         if: matrix.use_cross
+        env:
+          OPENSSL_VENDORED: "1"
         run: cross build --release --locked --target ${{ matrix.target }} ${{ matrix.cargo_features }}
 
       - name: Build binary (cargo - native)
         if: "!matrix.use_cross"
+        env:
+          OPENSSL_VENDORED: "1"
         run: cargo build --release --locked --target ${{ matrix.target }} ${{ matrix.cargo_features }}
 
       # -- Package compressed archive --------------------------------------------
