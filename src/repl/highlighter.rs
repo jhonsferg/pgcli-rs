@@ -407,7 +407,10 @@ fn highlight_tokens(input: &str, theme: &str) -> String {
             while i + 1 < chars.len() && !(chars[i] == '$' && chars[i + 1] == '$') {
                 i += 1;
             }
-            i += 2;
+            // Only advance past the closing '$$' if it was actually found.
+            if i + 1 < chars.len() {
+                i += 2;
+            }
             let literal: String = chars[start..i].iter().collect();
             out.push_str(&literal.bright_green().to_string());
             continue;
@@ -420,7 +423,10 @@ fn highlight_tokens(input: &str, theme: &str) -> String {
             while i < chars.len() && chars[i] != '"' {
                 i += 1;
             }
-            i += 1;
+            // Only advance past the closing '"' if it was actually found.
+            if i < chars.len() {
+                i += 1;
+            }
             let ident: String = chars[start..i].iter().collect();
             out.push_str(&ident.cyan().to_string());
             continue;
@@ -506,6 +512,20 @@ mod tests {
             )
             .unwrap();
         assert!(cands.is_empty());
+    }
+
+    #[test]
+    fn highlight_unclosed_double_quote_does_not_panic() {
+        // Pasting an incomplete identifier must not panic with index-out-of-range.
+        let h = SqlHighlighter::new("dark");
+        let _ = h.highlight_sql("CREATE EXTENSION IF NOT EXISTS");
+        let _ = h.highlight_sql(r#"SELECT "unclosed"#);
+    }
+
+    #[test]
+    fn highlight_unclosed_dollar_quote_does_not_panic() {
+        let h = SqlHighlighter::new("dark");
+        let _ = h.highlight_sql("$$ unclosed dollar");
     }
 
     #[test]
