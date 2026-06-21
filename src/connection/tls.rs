@@ -281,18 +281,16 @@ pub fn build_rustls(config: &TlsConfig) -> Result<RustlsConnector> {
 
     let tls_config =
         if let (Some(cert_path), Some(key_path)) = (&config.cert_path, &config.key_path) {
-            let cert_data = std::fs::read(cert_path).map_err(|e| {
-                PgCliError::Connection(format!("failed to read client cert: {e}"))
-            })?;
+            let cert_data = std::fs::read(cert_path)
+                .map_err(|e| PgCliError::Connection(format!("failed to read client cert: {e}")))?;
             let certs = rustls_pemfile::certs(&mut cert_data.as_slice())
                 .map_err(|e| PgCliError::Connection(format!("invalid client cert PEM: {e}")))?
                 .into_iter()
                 .map(Certificate)
                 .collect::<Vec<_>>();
 
-            let key_data = std::fs::read(key_path).map_err(|e| {
-                PgCliError::Connection(format!("failed to read client key: {e}"))
-            })?;
+            let key_data = std::fs::read(key_path)
+                .map_err(|e| PgCliError::Connection(format!("failed to read client key: {e}")))?;
             let key = rustls_pemfile::pkcs8_private_keys(&mut key_data.as_slice())
                 .map_err(|e| PgCliError::Connection(format!("invalid client key PEM: {e}")))?
                 .into_iter()
