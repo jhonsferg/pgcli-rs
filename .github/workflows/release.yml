@@ -37,7 +37,7 @@ jobs:
           # -- Linux x86_64 - 100% static musl binary ----------------------------
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
-            binary_name: pgcli-rs
+            binary_name: pgcli
             artifact_archive: pgcli-rs_linux_x86_64.tar.gz
             archive_type: tar
             use_cross: false
@@ -45,7 +45,7 @@ jobs:
           # -- Linux aarch64 - static musl (cross + Docker) ---------------------
           - os: ubuntu-latest
             target: aarch64-unknown-linux-musl
-            binary_name: pgcli-rs
+            binary_name: pgcli
             artifact_archive: pgcli-rs_linux_aarch64.tar.gz
             archive_type: tar
             use_cross: true
@@ -53,7 +53,7 @@ jobs:
           # -- Android aarch64 - bionic libc (Termux) ---------------------------
           - os: ubuntu-latest
             target: aarch64-linux-android
-            binary_name: pgcli-rs
+            binary_name: pgcli
             artifact_archive: pgcli-rs_android_aarch64.tar.gz
             archive_type: tar
             use_cross: true
@@ -61,7 +61,7 @@ jobs:
           # -- Linux armv7 - static musl (cross + Docker) -----------------------
           - os: ubuntu-latest
             target: armv7-unknown-linux-musleabihf
-            binary_name: pgcli-rs
+            binary_name: pgcli
             artifact_archive: pgcli-rs_linux_armv7.tar.gz
             archive_type: tar
             use_cross: true
@@ -69,7 +69,7 @@ jobs:
           # -- Linux 386 - static musl (cross + Docker) -------------------------
           - os: ubuntu-latest
             target: i686-unknown-linux-musl
-            binary_name: pgcli-rs
+            binary_name: pgcli
             artifact_archive: pgcli-rs_linux_386.tar.gz
             archive_type: tar
             use_cross: true
@@ -77,7 +77,7 @@ jobs:
           # -- Linux riscv64 - gnu (no stable musl target) -----------------------
           - os: ubuntu-latest
             target: riscv64gc-unknown-linux-gnu
-            binary_name: pgcli-rs
+            binary_name: pgcli
             artifact_archive: pgcli-rs_linux_riscv64.tar.gz
             archive_type: tar
             use_cross: true
@@ -85,7 +85,7 @@ jobs:
           # -- Linux s390x - gnu (IBM Z mainframe) -------------------------------
           - os: ubuntu-latest
             target: s390x-unknown-linux-gnu
-            binary_name: pgcli-rs
+            binary_name: pgcli
             artifact_archive: pgcli-rs_linux_s390x.tar.gz
             archive_type: tar
             use_cross: true
@@ -93,7 +93,7 @@ jobs:
           # -- Linux ppc64le - gnu (IBM POWER LE) -------------------------------
           - os: ubuntu-latest
             target: powerpc64le-unknown-linux-gnu
-            binary_name: pgcli-rs
+            binary_name: pgcli
             artifact_archive: pgcli-rs_linux_ppc64le.tar.gz
             archive_type: tar
             use_cross: true
@@ -101,7 +101,7 @@ jobs:
           # -- macOS x86_64 (Intel) ----------------------------------------------
           - os: macos-latest
             target: x86_64-apple-darwin
-            binary_name: pgcli-rs
+            binary_name: pgcli
             artifact_archive: pgcli-rs_darwin_x86_64.tar.gz
             archive_type: tar
             use_cross: false
@@ -109,7 +109,7 @@ jobs:
           # -- macOS aarch64 (Apple Silicon) -------------------------------------
           - os: macos-latest
             target: aarch64-apple-darwin
-            binary_name: pgcli-rs
+            binary_name: pgcli
             artifact_archive: pgcli-rs_darwin_aarch64.tar.gz
             archive_type: tar
             use_cross: false
@@ -117,7 +117,7 @@ jobs:
           # -- Windows x86_64 (MSVC) ---------------------------------------------
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            binary_name: pgcli-rs.exe
+            binary_name: pgcli.exe
             artifact_archive: pgcli-rs_windows_x86_64.zip
             archive_type: zip
             use_cross: false
@@ -125,7 +125,7 @@ jobs:
           # -- Windows arm64 (MSVC cross-compile) -------------------------------
           - os: windows-latest
             target: aarch64-pc-windows-msvc
-            binary_name: pgcli-rs.exe
+            binary_name: pgcli.exe
             artifact_archive: pgcli-rs_windows_arm64.zip
             archive_type: zip
             use_cross: false
@@ -193,19 +193,19 @@ jobs:
         if: matrix.archive_type == 'tar'
         shell: bash
         run: |
-          cp "target/${{ matrix.target }}/release/${{ matrix.binary_name }}" pgcli-rs
-          tar czf "${{ matrix.artifact_archive }}" pgcli-rs
-          rm pgcli-rs
+          cp "target/${{ matrix.target }}/release/${{ matrix.binary_name }}" pgcli
+          tar czf "${{ matrix.artifact_archive }}" pgcli
+          rm pgcli
 
       - name: Package archive (zip - Windows)
         if: matrix.archive_type == 'zip'
         shell: pwsh
         run: |
-          Copy-Item "target\${{ matrix.target }}\release\${{ matrix.binary_name }}" pgcli-rs.exe
-          Compress-Archive -Path pgcli-rs.exe `
+          Copy-Item "target\${{ matrix.target }}\release\${{ matrix.binary_name }}" pgcli.exe
+          Compress-Archive -Path pgcli.exe `
                            -DestinationPath "${{ matrix.artifact_archive }}" `
                            -Force
-          Remove-Item pgcli-rs.exe
+          Remove-Item pgcli.exe
 
       # -- Upload to workflow artifacts (collected by publish job) ---------------
 
@@ -330,11 +330,7 @@ jobs:
 
             echo "### Install"
             echo ""
-            echo "\`\`\`sh"
-            echo "cargo install pgcli-rs"
-            echo "\`\`\`"
-            echo ""
-            echo "Or download a prebuilt binary for your platform from the assets below."
+            echo "Download the prebuilt binary for your platform from the assets below and add it to your PATH."
           } > /tmp/release_notes.md
 
           cat /tmp/release_notes.md
