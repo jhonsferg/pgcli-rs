@@ -1231,7 +1231,14 @@ async fn run(args: CliArgs) -> pgcli_rs::Result<()> {
                                     tracing::warn!("Schema cache refresh after reconnect: {ce}");
                                 }
                             }
-                            Err(re) => eprintln!("Reconnect failed: {re}"),
+                            Err(re) => {
+                                eprintln!("Reconnect failed: {re}");
+                                eprintln!(
+                                    "Connection to \"{}\" could not be restored. \
+                                     Use \\reconnect to retry or \\q to exit.",
+                                    pool.config().database
+                                );
+                            }
                         }
                     }
                 }

@@ -1,16 +1,16 @@
-/// Aligned table renderer using `comfy-table`.
+/// Aligned table renderer - pure-Rust implementation with no external dependency
+/// on terminal-width detection.
+///
+/// Column widths are computed from the visible character count of each cell,
+/// so ANSI escape codes applied to header text never inflate the column width.
 use colored::Colorize;
-use comfy_table::{
-    modifiers::UTF8_ROUND_CORNERS, presets, Cell, CellAlignment, ColumnConstraint,
-    ContentArrangement, Table, Width,
-};
+use serde_json;
 
 use crate::error::Result;
 use crate::output::formats::{format_duration, FormatOptions, Formatter, LineStyle};
 use crate::protocol::messages::{is_numeric, CellValue, QueryResult};
-use serde_json;
 
-/// Formats a `QueryResult` as a bordered table using `comfy-table`.
+/// Formats a `QueryResult` as a bordered table.
 pub struct TableFormatter;
 
 impl Formatter for TableFormatter {
@@ -18,103 +18,330 @@ impl Formatter for TableFormatter {
         if opts.expanded {
             return Ok(format_expanded(result, opts));
         }
-        format_table(result, opts)
+        Ok(format_table(result, opts))
+    }
+}
+
+/// Box-drawing characters for one border style.
+struct Chars {
+    v: char,
+    h: char,
+    hm: char,
+    tl: char,
+    tm: char,
+    tr: char,
+    ml: char,
+    mm: char,
+    mr: char,
+    bl: char,
+    bm: char,
+    br: char,
+}
+
+impl Chars {
+    fn unicode_plain() -> Self {
+        Self {
+            v: '│',
+            h: '─',
+            hm: '─',
+            tl: '┌',
+            tm: '┬',
+            tr: '┐',
+            ml: '├',
+            mm: '┼',
+            mr: '┤',
+            bl: '└',
+            bm: '┴',
+            br: '┘',
+        }
+    }
+
+    fn unicode_round() -> Self {
+        // border=2: rounded corners, double-line header separator
+        Self {
+            v: '│',
+            h: '─',
+            hm: '═',
+            tl: '╭',
+            tm: '┬',
+            tr: '╮',
+            ml: '╞',
+            mm: '╪',
+            mr: '╡',
+            bl: '╰',
+            bm: '┴',
+            br: '╯',
+        }
+    }
+
+    fn ascii() -> Self {
+        Self {
+            v: '|',
+            h: '-',
+            hm: '-',
+            tl: '+',
+            tm: '+',
+            tr: '+',
+            ml: '+',
+            mm: '+',
+            mr: '+',
+            bl: '+',
+            bm: '+',
+            br: '+',
+        }
+    }
+}
+
+fn select_chars(opts: &FormatOptions) -> Option<Chars> {
+    if opts.border == 0 {
+        return None;
+    }
+    match (&opts.line_style, opts.border) {
+        (LineStyle::Ascii | LineStyle::OldAscii, _) => Some(Chars::ascii()),
+        (_, 2) => Some(Chars::unicode_round()),
+        _ => Some(Chars::unicode_plain()),
+    }
+}
+
+/// Render a full horizontal rule.
+fn hline(widths: &[usize], l: char, m: char, r: char, fill: char) -> String {
+    let mut s = String::new();
+    s.push(l);
+    for (i, &w) in widths.iter().enumerate() {
+        for _ in 0..w + 2 {
+            s.push(fill);
+        }
+        if i + 1 < widths.len() {
+            s.push(m);
+        }
+    }
+    s.push(r);
+    s
+}
+
+fn timing_suffix(result: &QueryResult, opts: &FormatOptions) -> String {
+    if opts.timing {
+        format!(" - {}", format_duration(result.duration_ms))
+    } else {
+        String::new()
     }
 }
 
 /// Render `result` as a normal aligned table.
-fn format_table(result: &QueryResult, opts: &FormatOptions) -> Result<String> {
+fn format_table(result: &QueryResult, opts: &FormatOptions) -> String {
     let mut out = String::new();
 
-    // Optional title line printed above the table.
     if let Some(ref title) = opts.title {
         out.push_str(title);
         out.push('\n');
     }
 
-    let mut table = Table::new();
-    table.set_content_arrangement(ContentArrangement::Dynamic);
-
-    // Apply border preset based on opts.border and opts.line_style.
-    apply_preset(&mut table, opts);
-
-    // Header row - colorize based on theme.
-    if !opts.tuples_only {
-        let headers: Vec<Cell> = result
-            .columns
-            .iter()
-            .map(|c| {
-                let name = match opts.theme.as_str() {
-                    "dark" => c.name.bright_cyan().bold().to_string(),
-                    "light" => c.name.blue().bold().to_string(),
-                    _ => c.name.clone(),
-                };
-                Cell::new(name)
-            })
-            .collect();
-        table.set_header(headers);
-
-        // Set a minimum column width equal to the plain header text length so
-        // that column borders never collapse when there are no data rows.
-        for (i, col) in result.columns.iter().enumerate() {
-            let min_w = col.name.len().max(1) as u16;
-            if let Some(column) = table.column_mut(i) {
-                column.set_constraint(ColumnConstraint::LowerBoundary(Width::Fixed(min_w)));
-            }
+    let ncols = result.columns.len();
+    if ncols == 0 {
+        if !opts.tuples_only && opts.footer {
+            let timing = timing_suffix(result, opts);
+            out.push_str(&format!("(0 rows){timing}"));
         }
+        return out;
     }
 
-    if result.rows.is_empty() {
-        // Insert a centred "(No results)" message row so the user gets visual
-        // feedback without an eerily blank table body.
-        if !opts.tuples_only && !result.columns.is_empty() {
-            let ncols = result.columns.len();
-            let mut cells: Vec<Cell> =
-                vec![Cell::new("(No results)").set_alignment(CellAlignment::Center)];
-            for _ in 1..ncols {
-                cells.push(Cell::new(""));
-            }
-            table.add_row(cells);
-        }
-    } else {
-        // Data rows.
-        for row in &result.rows {
-            let cells: Vec<Cell> = row
-                .values
+    // Compute per-column display widths from visible character counts only.
+    // ANSI codes in colored header strings are NOT included in the count.
+    let col_widths: Vec<usize> = (0..ncols)
+        .map(|i| {
+            let col = &result.columns[i];
+            let hdr_w = col.name.chars().count();
+            let data_w = result
+                .rows
                 .iter()
-                .zip(&result.columns)
-                .map(|(v, col)| {
-                    let mut s = cell_display_typed(v, &opts.null_display, &col.type_name);
-                    if opts.numeric_locale && is_numeric(v) {
-                        s = apply_numeric_locale(&s);
-                    }
-                    let s = truncate_cell(&s, opts.max_column_width);
-                    let mut cell = Cell::new(s);
-                    if is_numeric(v) {
-                        cell = cell.set_alignment(CellAlignment::Right);
-                    }
-                    cell
+                .map(|row| {
+                    row.values
+                        .get(i)
+                        .map(|v| {
+                            let s = cell_display_typed(v, &opts.null_display, &col.type_name);
+                            truncate_cell(&s, opts.max_column_width).chars().count()
+                        })
+                        .unwrap_or(0)
                 })
-                .collect();
-            table.add_row(cells);
+                .max()
+                .unwrap_or(0);
+            hdr_w.max(data_w).max(1)
+        })
+        .collect();
+
+    let chars = select_chars(opts);
+
+    match &chars {
+        Some(c) => {
+            // ── Bordered render (border >= 1) ────────────────────────────────
+            out.push_str(&hline(&col_widths, c.tl, c.tm, c.tr, c.h));
+            out.push('\n');
+
+            if !opts.tuples_only {
+                // Header row - pad using plain-text width so ANSI codes do not
+                // shift cell borders.
+                out.push(c.v);
+                for (i, col) in result.columns.iter().enumerate() {
+                    let plain_w = col.name.chars().count();
+                    let pad = col_widths[i] - plain_w;
+                    let colored = match opts.theme.as_str() {
+                        "dark" => col.name.bright_cyan().bold().to_string(),
+                        "light" => col.name.blue().bold().to_string(),
+                        _ => col.name.clone(),
+                    };
+                    out.push(' ');
+                    out.push_str(&colored);
+                    for _ in 0..pad {
+                        out.push(' ');
+                    }
+                    out.push(' ');
+                    out.push(c.v);
+                }
+                out.push('\n');
+
+                // Header/body separator.
+                out.push_str(&hline(&col_widths, c.ml, c.mm, c.mr, c.hm));
+                out.push('\n');
+            }
+
+            // Data rows or centred "(No results)" placeholder.
+            if result.rows.is_empty() && !opts.tuples_only {
+                // Inner width = sum(col_widths) + 2*ncols (padding) + (ncols-1) (separators).
+                let inner_w: usize =
+                    col_widths.iter().sum::<usize>() + col_widths.len() * 2 + col_widths.len() - 1;
+                let msg = "(No results)";
+                let msg_w = msg.chars().count();
+                let pad_total = inner_w.saturating_sub(msg_w);
+                let pad_l = pad_total / 2;
+                let pad_r = pad_total - pad_l;
+                out.push(c.v);
+                for _ in 0..pad_l {
+                    out.push(' ');
+                }
+                out.push_str(msg);
+                for _ in 0..pad_r {
+                    out.push(' ');
+                }
+                out.push(c.v);
+                out.push('\n');
+            } else {
+                for row in &result.rows {
+                    out.push(c.v);
+                    for (i, col) in result.columns.iter().enumerate() {
+                        let val = row.values.get(i).unwrap_or(&CellValue::Null);
+                        let mut s = cell_display_typed(val, &opts.null_display, &col.type_name);
+                        if opts.numeric_locale && is_numeric(val) {
+                            s = apply_numeric_locale(&s);
+                        }
+                        let s = truncate_cell(&s, opts.max_column_width);
+                        let vis = s.chars().count();
+                        let w = col_widths[i];
+                        let pad = w.saturating_sub(vis);
+                        if is_numeric(val) {
+                            // Right-align numbers.
+                            out.push(' ');
+                            for _ in 0..pad {
+                                out.push(' ');
+                            }
+                            out.push_str(&s);
+                            out.push(' ');
+                        } else {
+                            out.push(' ');
+                            out.push_str(&s);
+                            for _ in 0..pad {
+                                out.push(' ');
+                            }
+                            out.push(' ');
+                        }
+                        out.push(c.v);
+                    }
+                    out.push('\n');
+                }
+            }
+
+            // Bottom border.
+            out.push_str(&hline(&col_widths, c.bl, c.bm, c.br, c.h));
+            out.push('\n');
+        }
+
+        None => {
+            // ── Border-less render (border = 0) ──────────────────────────────
+            // Columns separated by two spaces; no outer delimiters; no lines.
+            if !opts.tuples_only {
+                // Header.
+                for (i, col) in result.columns.iter().enumerate() {
+                    let plain_w = col.name.chars().count();
+                    let pad = col_widths[i] - plain_w;
+                    let colored = match opts.theme.as_str() {
+                        "dark" => col.name.bright_cyan().bold().to_string(),
+                        "light" => col.name.blue().bold().to_string(),
+                        _ => col.name.clone(),
+                    };
+                    out.push_str(&colored);
+                    for _ in 0..pad {
+                        out.push(' ');
+                    }
+                    if i + 1 < ncols {
+                        out.push_str("  ");
+                    }
+                }
+                out.push('\n');
+                // Separator line (dashes).
+                for (i, &w) in col_widths.iter().enumerate() {
+                    for _ in 0..w {
+                        out.push('-');
+                    }
+                    if i + 1 < ncols {
+                        out.push_str("  ");
+                    }
+                }
+                out.push('\n');
+            }
+
+            if result.rows.is_empty() && !opts.tuples_only {
+                out.push_str("(No results)\n");
+            } else {
+                for row in &result.rows {
+                    for (i, col) in result.columns.iter().enumerate() {
+                        let val = row.values.get(i).unwrap_or(&CellValue::Null);
+                        let mut s = cell_display_typed(val, &opts.null_display, &col.type_name);
+                        if opts.numeric_locale && is_numeric(val) {
+                            s = apply_numeric_locale(&s);
+                        }
+                        let s = truncate_cell(&s, opts.max_column_width);
+                        let vis = s.chars().count();
+                        let w = col_widths[i];
+                        let pad = w.saturating_sub(vis);
+                        if is_numeric(val) {
+                            for _ in 0..pad {
+                                out.push(' ');
+                            }
+                            out.push_str(&s);
+                        } else {
+                            out.push_str(&s);
+                            for _ in 0..pad {
+                                out.push(' ');
+                            }
+                        }
+                        if i + 1 < ncols {
+                            out.push_str("  ");
+                        }
+                    }
+                    out.push('\n');
+                }
+            }
         }
     }
 
-    out.push_str(&table.to_string());
-
-    // Footer: row count + timing (suppressed by tuples_only or footer=false).
+    // Footer.
     if !opts.tuples_only && opts.footer {
         let row_count = result.rows.len();
         let row_word = if row_count == 1 { "row" } else { "rows" };
-        let timing = if opts.timing {
-            format!(" - {}", format_duration(result.duration_ms))
-        } else {
-            String::new()
-        };
-        out.push_str(&format!("\n({row_count} {row_word}){timing}"));
+        let timing = timing_suffix(result, opts);
+        out.push_str(&format!("({row_count} {row_word}){timing}"));
     }
 
-    Ok(out)
+    out
 }
 
 /// Render `result` in expanded (vertical) mode: one column per line per row.
@@ -134,39 +361,10 @@ fn format_expanded(result: &QueryResult, opts: &FormatOptions) -> String {
     if !opts.tuples_only && opts.footer {
         let row_count = result.rows.len();
         let row_word = if row_count == 1 { "row" } else { "rows" };
-        let timing = if opts.timing {
-            format!(" - {}", format_duration(result.duration_ms))
-        } else {
-            String::new()
-        };
+        let timing = timing_suffix(result, opts);
         out.push_str(&format!("({row_count} {row_word}){timing}"));
     }
     out
-}
-
-/// Apply the appropriate `comfy-table` preset for the given options.
-fn apply_preset(table: &mut Table, opts: &FormatOptions) {
-    match (opts.border, &opts.line_style) {
-        (0, _) => {
-            table.load_preset(presets::NOTHING);
-        }
-        (1, LineStyle::Ascii) | (1, LineStyle::OldAscii) => {
-            table.load_preset(presets::ASCII_MARKDOWN);
-        }
-        (2, LineStyle::Ascii) | (2, LineStyle::OldAscii) => {
-            table.load_preset(presets::ASCII_FULL);
-        }
-        (1, _) => {
-            table.load_preset(presets::UTF8_FULL);
-        }
-        (2, _) => {
-            table.load_preset(presets::UTF8_FULL);
-            table.apply_modifier(UTF8_ROUND_CORNERS);
-        }
-        _ => {
-            table.load_preset(presets::UTF8_FULL);
-        }
-    }
 }
 
 /// Return the display string for a cell value, substituting `null_display` for NULL.
@@ -176,7 +374,6 @@ fn cell_display_typed(v: &CellValue, null_display: &str, type_name: &str) -> Str
         CellValue::Null => null_display.to_string(),
         other => {
             let s = other.to_string();
-            // Pretty-print JSON/JSONB column values when they look like JSON.
             if matches!(type_name, "json" | "jsonb") && (s.starts_with('{') || s.starts_with('[')) {
                 if let Ok(val) = serde_json::from_str::<serde_json::Value>(&s) {
                     if let Ok(pretty) = serde_json::to_string_pretty(&val) {
@@ -189,7 +386,7 @@ fn cell_display_typed(v: &CellValue, null_display: &str, type_name: &str) -> Str
     }
 }
 
-/// Insert thousands separators into a numeric string (e.g. `"1234567.89"` → `"1,234,567.89"`).
+/// Insert thousands separators into a numeric string (e.g. `"1234567.89"` -> `"1,234,567.89"`).
 ///
 /// Returns the original string unchanged if it is not a pure integer/decimal.
 pub fn apply_numeric_locale(s: &str) -> String {
@@ -226,7 +423,7 @@ pub fn apply_numeric_locale(s: &str) -> String {
     }
 }
 
-/// Truncate a string to `max_width` characters, appending `…` if needed.
+/// Truncate a string to `max_width` characters, appending `...` if needed.
 /// A `max_width` of 0 means unlimited.
 fn truncate_cell(s: &str, max_width: usize) -> String {
     if max_width == 0 || s.chars().count() <= max_width {
@@ -300,6 +497,41 @@ mod tests {
             "no-results marker missing: {out}"
         );
         assert!(out.contains("(0 rows)"), "row count missing: {out}");
+    }
+
+    #[test]
+    fn header_column_width_matches_data_not_ansi() {
+        // When data in a column is wider than the header, the column must be as
+        // wide as the data. Use theme="none" to avoid ANSI codes in the output.
+        let result = make_result(
+            &["n"],
+            &[vec![CellValue::Text("a_long_value_here".to_string())]],
+        );
+        let opts = FormatOptions {
+            theme: "none".to_string(),
+            ..FormatOptions::default()
+        };
+        let out = TableFormatter.format(&result, &opts).unwrap();
+        assert!(out.contains("a_long_value_here"), "data missing: {out}");
+        // hline pads each column width + 2, so for width=17 we get 19 dashes.
+        assert!(
+            out.contains("───────────────────"),
+            "column not wide enough for data: {out}"
+        );
+    }
+
+    #[test]
+    fn borders_present_for_empty_table_with_long_headers() {
+        // Columns should be wide enough to show their headers even with no data rows.
+        let result = make_result(&["schema_name", "table_name", "owner"], &[]);
+        let opts = FormatOptions::default();
+        let out = TableFormatter.format(&result, &opts).unwrap();
+        // Each header text must appear intact.
+        assert!(out.contains("schema_name"), "schema_name missing: {out}");
+        assert!(out.contains("table_name"), "table_name missing: {out}");
+        assert!(out.contains("owner"), "owner missing: {out}");
+        // Borders must be present (default border=2 uses Unicode).
+        assert!(out.contains('│'), "border │ missing: {out}");
     }
 
     #[test]
