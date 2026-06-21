@@ -296,7 +296,10 @@ fn classify_pg_error(e: tokio_postgres::Error, user: &str) -> PgCliError {
              Configure pg_hba.conf to use scram-sha-256 or md5 for this connection."
                 .to_string(),
         )
-    } else if msg.contains("invalid configuration") || msg.contains("SASL") || msg.contains("password") {
+    } else if msg.contains("invalid configuration")
+        || msg.contains("SASL")
+        || msg.contains("password")
+    {
         PgCliError::Connection(format!(
             "authentication failed for user \"{user}\" - password required. \
              Use -W to prompt, set PGPASSWORD, or add an entry to ~/.pgpass"
