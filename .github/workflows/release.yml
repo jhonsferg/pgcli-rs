@@ -1,0 +1,390 @@
+name: Release
+
+# Triggered by pushing a version tag - either manually or by the auto-release
+# job in ci.yml. Builds compressed archives for all supported platforms, embeds
+# the tag version into each binary at compile time, generates checksums + SBOM,
+# creates the GitHub Release with structured notes and uploads everything.
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  # Allows the auto-release job in ci.yml to dispatch this workflow explicitly
+  # after pushing a tag with GITHUB_TOKEN, which does not trigger push events.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  # -- Cross-compile for every supported target ----------------------------------
+  #
+  # Naming convention (must stay in sync with upgrade.rs::release_archive_name()):
+  #   Archive : pgcli-rs_{os}_{arch}.tar.gz  - Linux / macOS
+  #   Archive : pgcli-rs_{os}_{arch}.zip     - Windows
+  build:
+    name: Build ${{ matrix.artifact_archive }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # -- Linux x86_64 - 100% static musl binary ----------------------------
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            binary_name: pgcli-rs
+            artifact_archive: pgcli-rs_linux_x86_64.tar.gz
+            archive_type: tar
+            use_cross: false
+
+          # -- Linux aarch64 - static musl (cross + Docker) ---------------------
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-musl
+            binary_name: pgcli-rs
+            artifact_archive: pgcli-rs_linux_aarch64.tar.gz
+            archive_type: tar
+            use_cross: true
+
+          # -- Android aarch64 - bionic libc (Termux) ---------------------------
+          - os: ubuntu-latest
+            target: aarch64-linux-android
+            binary_name: pgcli-rs
+            artifact_archive: pgcli-rs_android_aarch64.tar.gz
+            archive_type: tar
+            use_cross: true
+
+          # -- Linux armv7 - static musl (cross + Docker) -----------------------
+          - os: ubuntu-latest
+            target: armv7-unknown-linux-musleabihf
+            binary_name: pgcli-rs
+            artifact_archive: pgcli-rs_linux_armv7.tar.gz
+            archive_type: tar
+            use_cross: true
+
+          # -- Linux 386 - static musl (cross + Docker) -------------------------
+          - os: ubuntu-latest
+            target: i686-unknown-linux-musl
+            binary_name: pgcli-rs
+            artifact_archive: pgcli-rs_linux_386.tar.gz
+            archive_type: tar
+            use_cross: true
+
+          # -- Linux riscv64 - gnu (no stable musl target) -----------------------
+          - os: ubuntu-latest
+            target: riscv64gc-unknown-linux-gnu
+            binary_name: pgcli-rs
+            artifact_archive: pgcli-rs_linux_riscv64.tar.gz
+            archive_type: tar
+            use_cross: true
+
+          # -- Linux s390x - gnu (IBM Z mainframe) -------------------------------
+          - os: ubuntu-latest
+            target: s390x-unknown-linux-gnu
+            binary_name: pgcli-rs
+            artifact_archive: pgcli-rs_linux_s390x.tar.gz
+            archive_type: tar
+            use_cross: true
+
+          # -- Linux ppc64le - gnu (IBM POWER LE) -------------------------------
+          - os: ubuntu-latest
+            target: powerpc64le-unknown-linux-gnu
+            binary_name: pgcli-rs
+            artifact_archive: pgcli-rs_linux_ppc64le.tar.gz
+            archive_type: tar
+            use_cross: true
+
+          # -- macOS x86_64 (Intel) ----------------------------------------------
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            binary_name: pgcli-rs
+            artifact_archive: pgcli-rs_darwin_x86_64.tar.gz
+            archive_type: tar
+            use_cross: false
+
+          # -- macOS aarch64 (Apple Silicon) -------------------------------------
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            binary_name: pgcli-rs
+            artifact_archive: pgcli-rs_darwin_aarch64.tar.gz
+            archive_type: tar
+            use_cross: false
+
+          # -- Windows x86_64 (MSVC) ---------------------------------------------
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary_name: pgcli-rs.exe
+            artifact_archive: pgcli-rs_windows_x86_64.zip
+            archive_type: zip
+            use_cross: false
+
+          # -- Windows arm64 (MSVC cross-compile) -------------------------------
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+            binary_name: pgcli-rs.exe
+            artifact_archive: pgcli-rs_windows_arm64.zip
+            archive_type: zip
+            use_cross: false
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Cargo registry and build artifacts
+        uses: Swatinem/rust-cache@82a92a6e8fbeee089604da2575dc567ae9ddeaab # v2
+        with:
+          key: release-${{ matrix.target }}
+
+      # -- Embed the tag version into Cargo.toml before compiling ---------------
+      #
+      # The tag (e.g. v1.1.0) is stripped of its leading 'v' and written into
+      # Cargo.toml and Cargo.lock so that `pgcli-rs --version` reports the
+      # correct version without committing anything to main.
+      #
+      # sed note: macOS uses BSD sed which does not support GNU-only 0,/pat/
+      # address ranges. The simple s/^version = .../ pattern is portable because
+      # only the [package] version line starts at column 0 in our Cargo.toml.
+      # Cargo.lock needs a two-line match so perl is used there instead.
+      - name: Set version from tag
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          # Cargo.toml - simple substitution, no GNU-only address ranges
+          sed -i.bak 's/^version = "[^"]*"/version = "'"${VERSION}"'"/' Cargo.toml
+          rm -f Cargo.toml.bak
+          # Cargo.lock - stateful perl: set flag on name = "pgcli-rs", replace version on next line.
+          # \r? makes the pattern work on both LF (Linux/macOS) and CRLF (Windows checkout).
+          perl -i.bak -pe 'if (/^name = "pgcli-rs"\r?$/) { $f=1 } elsif ($f) { s/^version = "[^"]*"/version = "'"${VERSION}"'"/; $f=0 }' Cargo.lock
+          rm -f Cargo.lock.bak
+          echo "Version set to ${VERSION}"
+          grep '^version' Cargo.toml
+
+      # -- Linux-only toolchain setup --------------------------------------------
+
+      - name: Install musl-tools (Linux x86_64 static)
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get update -q && sudo apt-get install -y musl-tools
+
+      - name: Install cross (Linux targets via Docker)
+        if: matrix.use_cross
+        run: cargo install cross --locked
+
+      # -- Compile ---------------------------------------------------------------
+
+      - name: Build binary (cross - Docker QEMU)
+        if: matrix.use_cross
+        run: cross build --release --locked --target ${{ matrix.target }}
+
+      - name: Build binary (cargo - native)
+        if: "!matrix.use_cross"
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      # -- Package compressed archive --------------------------------------------
+
+      - name: Package archive (tar.gz - Linux / macOS)
+        if: matrix.archive_type == 'tar'
+        shell: bash
+        run: |
+          cp "target/${{ matrix.target }}/release/${{ matrix.binary_name }}" pgcli-rs
+          tar czf "${{ matrix.artifact_archive }}" pgcli-rs
+          rm pgcli-rs
+
+      - name: Package archive (zip - Windows)
+        if: matrix.archive_type == 'zip'
+        shell: pwsh
+        run: |
+          Copy-Item "target\${{ matrix.target }}\release\${{ matrix.binary_name }}" pgcli-rs.exe
+          Compress-Archive -Path pgcli-rs.exe `
+                           -DestinationPath "${{ matrix.artifact_archive }}" `
+                           -Force
+          Remove-Item pgcli-rs.exe
+
+      # -- Upload to workflow artifacts (collected by publish job) ---------------
+
+      - name: Upload archive
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: ${{ matrix.artifact_archive }}
+          path: ${{ matrix.artifact_archive }}
+          if-no-files-found: error
+          retention-days: 1
+
+  # -- Checksums · SBOM · Create Release · Upload Assets ------------------------
+  publish:
+    name: Publish Release Assets
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: List dist/ contents
+        run: ls -lh dist/
+
+      # -- checksums.txt ----------------------------------------------------------
+
+      - name: Generate checksums.txt
+        working-directory: dist
+        run: |
+          sha256sum pgcli-rs_* > checksums.txt
+          echo ""
+          echo "=== checksums.txt ==="
+          cat checksums.txt
+
+      # -- SBOM ------------------------------------------------------------------
+
+      - name: Generate SBOM - CycloneDX JSON
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: dist/sbom.cyclonedx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Generate SBOM - SPDX JSON
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          path: .
+          format: spdx-json
+          output-file: dist/sbom.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      # -- Generate release notes from conventional commits ----------------------
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          set -euo pipefail
+
+          TAG="${{ github.ref_name }}"
+          REPO="${{ github.repository }}"
+
+          PREV_TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | grep -v "^${TAG}$" | tail -1 || true)
+          [ -z "$PREV_TAG" ] && RANGE="HEAD" || RANGE="${PREV_TAG}..HEAD"
+
+          {
+            echo "## What's Changed in ${TAG}"
+            echo ""
+
+            BREAKING=$(git log "$RANGE" --format="%s" | grep -E '^[a-z]+(\([^)]*\))?!:' | sed 's/^[^:]*: //' || true)
+            if [ -n "$BREAKING" ]; then
+              echo "### Breaking Changes"
+              while IFS= read -r l; do [ -n "$l" ] && echo "- $l"; done <<< "$BREAKING"
+              echo ""
+            fi
+
+            FEATS=$(git log "$RANGE" --format="%s" | grep -E '^feat(\([^)]*\))?:' | sed 's/^feat[^:]*: //' || true)
+            if [ -n "$FEATS" ]; then
+              echo "### New Features"
+              while IFS= read -r l; do [ -n "$l" ] && echo "- $l"; done <<< "$FEATS"
+              echo ""
+            fi
+
+            FIXES=$(git log "$RANGE" --format="%s" | grep -E '^fix(\([^)]*\))?:' | sed 's/^fix[^:]*: //' || true)
+            if [ -n "$FIXES" ]; then
+              echo "### Bug Fixes"
+              while IFS= read -r l; do [ -n "$l" ] && echo "- $l"; done <<< "$FIXES"
+              echo ""
+            fi
+
+            SECURITY=$(git log "$RANGE" --format="%s" | grep -E '^security(\([^)]*\))?:' | sed 's/^security[^:]*: //' || true)
+            if [ -n "$SECURITY" ]; then
+              echo "### Security"
+              while IFS= read -r l; do [ -n "$l" ] && echo "- $l"; done <<< "$SECURITY"
+              echo ""
+            fi
+
+            PERF=$(git log "$RANGE" --format="%s" | grep -E '^perf(\([^)]*\))?:' | sed 's/^perf[^:]*: //' || true)
+            if [ -n "$PERF" ]; then
+              echo "### Performance"
+              while IFS= read -r l; do [ -n "$l" ] && echo "- $l"; done <<< "$PERF"
+              echo ""
+            fi
+
+            if [ -n "$PREV_TAG" ]; then
+              echo "---"
+              echo "**Full changelog**: https://github.com/${REPO}/compare/${PREV_TAG}...${TAG}"
+              echo ""
+            fi
+
+            echo "### Install"
+            echo ""
+            echo "\`\`\`sh"
+            echo "cargo install pgcli-rs"
+            echo "\`\`\`"
+            echo ""
+            echo "Or download a prebuilt binary for your platform from the assets below."
+          } > /tmp/release_notes.md
+
+          cat /tmp/release_notes.md
+
+      # -- Create GitHub Release and upload all assets ---------------------------
+
+      - name: Create GitHub Release and upload assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name }}"
+
+          gh release create "$TAG" \
+            --repo "${{ github.repository }}" \
+            --title "pgcli-rs ${TAG}" \
+            --notes-file /tmp/release_notes.md \
+            --latest \
+            --verify-tag
+
+          echo "Uploading assets for ${TAG} ..."
+          for file in dist/*; do
+            echo "  - $(basename "$file")"
+            gh release upload "$TAG" "$file" \
+              --repo "${{ github.repository }}" \
+              --clobber
+          done
+
+          echo "Release ${TAG} published with all assets"
+
+      # -- Workflow job summary ---------------------------------------------------
+
+      - name: Job summary
+        run: |
+          TAG="${{ github.ref_name }}"
+          {
+            echo "## pgcli-rs Release Assets - ${TAG}"
+            echo ""
+            echo "| File | Size | Purpose |"
+            echo "|------|------|---------|"
+            for f in dist/pgcli-rs_*; do
+              [ -f "$f" ] || continue
+              printf "| \`%s\` | %s | install archive |\n" \
+                "$(basename "$f")" "$(du -h "$f" | cut -f1)"
+            done
+            echo "| \`checksums.txt\` | - | SHA-256 integrity verification |"
+            echo "| \`sbom.cyclonedx.json\` | - | SBOM (CycloneDX) |"
+            echo "| \`sbom.spdx.json\` | - | SBOM (SPDX ISO/IEC 5962:2021) |"
+            echo ""
+            echo "### Checksums"
+            echo "\`\`\`"
+            cat dist/checksums.txt
+            echo "\`\`\`"
+          } >> "$GITHUB_STEP_SUMMARY"
