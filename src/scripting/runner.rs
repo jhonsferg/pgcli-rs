@@ -136,7 +136,10 @@ impl ScriptRunner {
                 // Flush any pending statement first.
                 if !stmt_buf.trim().is_empty() {
                     let sql = self.substitute(&stmt_buf);
-                    info!("Statement {stmt_index}: {}", sql.chars().take(60).collect::<String>());
+                    info!(
+                        "Statement {stmt_index}: {}",
+                        sql.chars().take(60).collect::<String>()
+                    );
                     if self.single_step && !single_step_confirm(&sql)? {
                         stmt_buf.clear();
                         stmt_index += 1;
@@ -193,8 +196,7 @@ impl ScriptRunner {
                     s
                 }
             };
-            if dollar_tag.is_none() && line_for_check.ends_with(';')
-            {
+            if dollar_tag.is_none() && line_for_check.ends_with(';') {
                 let sql = self.substitute(&stmt_buf);
                 let trimmed = sql.trim().to_string();
                 if !trimmed.is_empty() {
