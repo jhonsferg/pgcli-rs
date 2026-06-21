@@ -41,10 +41,10 @@ jobs:
         uses: Swatinem/rust-cache@82a92a6e8fbeee089604da2575dc567ae9ddeaab # v2
 
       - name: Check formatting
-        run: cargo fmt --lib --bin pgcli -- --check
+        run: rustfmt --edition 2021 --check $(find src -name "*.rs" | sort)
 
       - name: Clippy (deny warnings)
-        run: cargo clippy --lib --bin pgcli --all-features -- -D warnings
+        run: cargo clippy --all-features -- -D warnings
 
   # -- Unit tests - Windows · Linux · macOS -------------------------------------
   test:
