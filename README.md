@@ -9,14 +9,14 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/pgcli-rs/pgcli-rs/actions/workflows/ci.yml">
-    <img src="https://img.shields.io/github/actions/workflow/status/pgcli-rs/pgcli-rs/ci.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=CI" alt="CI"/>
+  <a href="https://github.com/jhonsferg/pgcli-rs/actions/workflows/ci.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/jhonsferg/pgcli-rs/ci.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=CI" alt="CI"/>
   </a>
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" alt="License MIT"/>
   </a>
-  <a href="https://github.com/pgcli-rs/pgcli-rs/releases">
-    <img src="https://img.shields.io/github/v/release/pgcli-rs/pgcli-rs?style=for-the-badge&logo=github&logoColor=white&label=Release" alt="Latest Release"/>
+  <a href="https://github.com/jhonsferg/pgcli-rs/releases">
+    <img src="https://img.shields.io/github/v/release/jhonsferg/pgcli-rs?style=for-the-badge&logo=github&logoColor=white&label=Release" alt="Latest Release"/>
   </a>
 </p>
 
@@ -91,7 +91,7 @@ cross-platform**.
 
 ### Prebuilt binaries
 
-Download from the [Releases](https://github.com/pgcli-rs/pgcli-rs/releases) page:
+Download from the [Releases](https://github.com/jhonsferg/pgcli-rs/releases) page:
 
 | Platform       | Binary                          |
 | -------------- | ------------------------------- |
@@ -104,7 +104,7 @@ Download from the [Releases](https://github.com/pgcli-rs/pgcli-rs/releases) page
 ### Build from source
 
 ```sh
-git clone https://github.com/pgcli-rs/pgcli-rs
+git clone https://github.com/jhonsferg/pgcli-rs
 cd pgcli-rs
 cargo build --release
 ./target/release/pgcli --version
