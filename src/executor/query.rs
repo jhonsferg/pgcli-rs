@@ -503,10 +503,13 @@ mod tests {
 
     #[test]
     fn split_dollar_quoted_function() {
-        let sql =
-            "CREATE FUNCTION f() RETURNS int AS $$ BEGIN RETURN 1; END; $$ LANGUAGE plpgsql;";
+        let sql = "CREATE FUNCTION f() RETURNS int AS $$ BEGIN RETURN 1; END; $$ LANGUAGE plpgsql;";
         let stmts = split_statements(sql);
-        assert_eq!(stmts.len(), 1, "semicolons inside $$ must not split the statement");
+        assert_eq!(
+            stmts.len(),
+            1,
+            "semicolons inside $$ must not split the statement"
+        );
         assert!(stmts[0].contains("BEGIN RETURN 1; END;"));
     }
 
@@ -515,7 +518,11 @@ mod tests {
         let sql =
             "CREATE FUNCTION f() RETURNS int AS $body$ BEGIN RETURN 1; END; $body$ LANGUAGE plpgsql;";
         let stmts = split_statements(sql);
-        assert_eq!(stmts.len(), 1, "named-tag dollar-quoted function should be one statement");
+        assert_eq!(
+            stmts.len(),
+            1,
+            "named-tag dollar-quoted function should be one statement"
+        );
     }
 
     #[test]
@@ -583,8 +590,6 @@ mod tests {
 
     #[test]
     fn is_incomplete_named_dollar_quote_closed() {
-        assert!(!is_incomplete(
-            "SELECT $body$ hello; world $body$::text;"
-        ));
+        assert!(!is_incomplete("SELECT $body$ hello; world $body$::text;"));
     }
 }
