@@ -181,7 +181,7 @@ jobs:
       - name: Fail on CRITICAL vulnerabilities
         run: |
           # Re-run with strict exit code only for CRITICAL severity
-          trivy fs --exit-code 1 --severity CRITICAL --format table 2>&1 || {
+          trivy fs --exit-code 1 --severity CRITICAL --format table . 2>&1 || {
             echo "❌ CRITICAL vulnerabilities found - review Trivy results in the Security tab"
             exit 1
           }
