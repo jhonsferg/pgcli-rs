@@ -12,9 +12,6 @@
   <a href="https://github.com/pgcli-rs/pgcli-rs/actions/workflows/ci.yml">
     <img src="https://img.shields.io/github/actions/workflow/status/pgcli-rs/pgcli-rs/ci.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=CI" alt="CI"/>
   </a>
-  <a href="https://crates.io/crates/pgcli-rs">
-    <img src="https://img.shields.io/crates/v/pgcli-rs?style=for-the-badge&logo=rust&logoColor=white&label=crates.io" alt="Crates.io"/>
-  </a>
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" alt="License MIT"/>
   </a>
@@ -91,12 +88,6 @@ cross-platform**.
 ---
 
 ## 📦 Installation
-
-### From crates.io
-
-```sh
-cargo install pgcli-rs
-```
 
 ### Prebuilt binaries
 
