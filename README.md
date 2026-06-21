@@ -1,15 +1,50 @@
-# pgcli-rs
+<p align="center">
+  <img src="assets/logo/ferris_and_elephant.png" alt="pgcli-rs" width="420"/>
+</p>
 
-> A self-contained PostgreSQL CLI written in pure Rust. No libpq. No system libraries. One binary.
+<h1 align="center">pgcli-rs</h1>
 
-[![CI](https://github.com/pgcli-rs/pgcli-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/pgcli-rs/pgcli-rs/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Crates.io](https://img.shields.io/crates/v/pgcli-rs.svg)](https://crates.io/crates/pgcli-rs)
-[![Rust](https://img.shields.io/badge/Rust-1.75%2B-orange?logo=rust&logoColor=white)](https://www.rust-lang.org/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-12%2B-blue?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![tokio](https://img.shields.io/badge/async-tokio-green?logo=tokio)](https://tokio.rs/)
-[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey?logo=linux)](https://github.com/pgcli-rs/pgcli-rs)
-[![Static Binary](https://img.shields.io/badge/binary-static%20musl-success)](https://github.com/pgcli-rs/pgcli-rs/releases)
+<p align="center">
+  <em>A self-contained PostgreSQL CLI written in pure Rust. No libpq. No system libraries. One binary.</em>
+</p>
+
+<p align="center">
+  <a href="https://github.com/pgcli-rs/pgcli-rs/actions/workflows/ci.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/pgcli-rs/pgcli-rs/ci.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=CI" alt="CI"/>
+  </a>
+  <a href="https://crates.io/crates/pgcli-rs">
+    <img src="https://img.shields.io/crates/v/pgcli-rs?style=for-the-badge&logo=rust&logoColor=white&label=crates.io" alt="Crates.io"/>
+  </a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" alt="License MIT"/>
+  </a>
+  <a href="https://github.com/pgcli-rs/pgcli-rs/releases">
+    <img src="https://img.shields.io/github/v/release/pgcli-rs/pgcli-rs?style=for-the-badge&logo=github&logoColor=white&label=Release" alt="Latest Release"/>
+  </a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Rust-1.75%2B-CE422B?style=for-the-badge&logo=rust&logoColor=white" alt="Rust 1.75+"/>
+  <img src="https://img.shields.io/badge/Edition-2021-CE422B?style=for-the-badge&logo=rust&logoColor=white" alt="Rust Edition 2021"/>
+  <img src="https://img.shields.io/badge/PostgreSQL-14%20%7C%2015%20%7C%2016%20%7C%2017%20%7C%2018-4169E1?style=for-the-badge&logo=postgresql&logoColor=white" alt="PostgreSQL 14-18"/>
+  <img src="https://img.shields.io/badge/Tokio-async%20runtime-2E8B57?style=for-the-badge" alt="Tokio"/>
+  <img src="https://img.shields.io/badge/tokio--postgres-wire%20protocol-2E8B57?style=for-the-badge" alt="tokio-postgres"/>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Linux-x86__64%20%7C%20ARM64-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Linux"/>
+  <img src="https://img.shields.io/badge/macOS-x86__64%20%7C%20ARM64-000000?style=for-the-badge&logo=apple&logoColor=white" alt="macOS"/>
+  <img src="https://img.shields.io/badge/Windows-x86__64-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows"/>
+  <img src="https://img.shields.io/badge/musl-static%20binary-4CAF50?style=for-the-badge" alt="musl static binary"/>
+  <img src="https://img.shields.io/badge/Docker-scratch%20compatible-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker scratch"/>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/TLS-native--tls%20%7C%20rustls-0F4C81?style=for-the-badge&logo=letsencrypt&logoColor=white" alt="TLS"/>
+  <img src="https://img.shields.io/badge/Auth-SCRAM--SHA--256%20%7C%20MD5-B22222?style=for-the-badge" alt="Auth SCRAM-SHA-256"/>
+  <img src="https://img.shields.io/badge/unsafe-forbidden-4CAF50?style=for-the-badge" alt="No unsafe code"/>
+  <img src="https://img.shields.io/badge/libpq-zero%20deps-4CAF50?style=for-the-badge" alt="Zero libpq dependencies"/>
+</p>
 
 ---
 
