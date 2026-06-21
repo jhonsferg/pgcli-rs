@@ -1,0 +1,196 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "assets/**"
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "assets/**"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  # -- Code format & lint --------------------------------------------------------
+  lint:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+
+      - name: Install Rust stable (rustfmt + clippy)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo registry and build artifacts
+        uses: Swatinem/rust-cache@82a92a6e8fbeee089604da2575dc567ae9ddeaab # v2
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (deny warnings)
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  # -- Unit tests - Windows · Linux · macOS -------------------------------------
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry and build artifacts
+        uses: Swatinem/rust-cache@82a92a6e8fbeee089604da2575dc567ae9ddeaab # v2
+        with:
+          key: ${{ matrix.os }}
+
+      - name: Run unit tests
+        run: cargo test --all-targets -- --nocapture
+
+      - name: Verify release build compiles
+        run: cargo build --release
+
+  # -- Auto-tag + release (push to main only) ------------------------------------
+  #
+  # Reads conventional commits since the last tag and computes the next semver.
+  # Creates an annotated tag on the current HEAD and pushes it - no commit to
+  # main is needed, so branch protection is never triggered.
+  # Pushing the tag fires release.yml which cross-compiles and publishes binaries.
+  #
+  # Bump rules:
+  #   feat!: / BREAKING CHANGE  -> major
+  #   feat:                      -> minor
+  #   fix: / perf: / refactor: / security:  -> patch
+  #   docs: / chore: / ci:       -> no release
+  auto-release:
+    name: Auto Tag & Release
+    needs: [lint, test]
+    if: |
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'push' &&
+      github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+        with:
+          fetch-depth: 0
+
+      # -- 1. Determine bump type from Conventional Commits ---------------------
+      - name: Determine version bump
+        id: bump
+        run: |
+          set -euo pipefail
+
+          LATEST_TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -1)
+          [ -z "$LATEST_TAG" ] && LATEST_TAG="v0.0.0"
+          echo "Latest tag: $LATEST_TAG"
+
+          if git rev-parse "${LATEST_TAG}" >/dev/null 2>&1; then
+            COMMITS=$(git log "${LATEST_TAG}..HEAD" --format="%s %b")
+          else
+            COMMITS=$(git log --format="%s %b")
+          fi
+
+          echo "Commits since ${LATEST_TAG}:"
+          echo "$COMMITS"
+
+          BUMP="none"
+          if echo "$COMMITS" | grep -qE '^[a-z]+(\([^)]*\))?!:|BREAKING.CHANGE'; then
+            BUMP="major"
+          elif echo "$COMMITS" | grep -qE '^feat(\([^)]*\))?:'; then
+            BUMP="minor"
+          elif echo "$COMMITS" | grep -qE '^(fix|perf|refactor|security)(\([^)]*\))?:'; then
+            BUMP="patch"
+          fi
+
+          echo "Bump type: $BUMP"
+          echo "bump=${BUMP}"             >> "$GITHUB_OUTPUT"
+          echo "latest_tag=${LATEST_TAG}" >> "$GITHUB_OUTPUT"
+
+      # -- 2. Compute the new version number ------------------------------------
+      - name: Compute new version
+        id: version
+        if: steps.bump.outputs.bump != 'none'
+        run: |
+          LATEST="${{ steps.bump.outputs.latest_tag }}"
+          VER="${LATEST#v}"
+          MAJOR=$(echo "$VER" | cut -d. -f1)
+          MINOR=$(echo "$VER" | cut -d. -f2)
+          PATCH=$(echo "$VER" | cut -d. -f3)
+
+          case "${{ steps.bump.outputs.bump }}" in
+            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH + 1)) ;;
+          esac
+
+          NEW_TAG="v${MAJOR}.${MINOR}.${PATCH}"
+          echo "New tag: $NEW_TAG"
+          echo "new_tag=${NEW_TAG}" >> "$GITHUB_OUTPUT"
+
+      # -- 3. Create annotated tag and push it ----------------------------------
+      #
+      # Pushing a tag does not touch any branch, so branch protection rules
+      # are not involved.
+      #
+      # NOTE: GITHUB_TOKEN tag pushes do not trigger downstream workflows
+      # (GitHub anti-loop policy). release.yml is dispatched explicitly in
+      # the next step instead of relying on the push event.
+      - name: Create and push version tag
+        if: steps.bump.outputs.bump != 'none'
+        run: |
+          NEW_TAG="${{ steps.version.outputs.new_tag }}"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$NEW_TAG" -m "Release ${NEW_TAG}"
+          git push origin "$NEW_TAG"
+          echo "Tag ${NEW_TAG} pushed"
+
+      # -- 4. Dispatch release.yml for the new tag ------------------------------
+      #
+      # GITHUB_TOKEN tag pushes do not fire push.tags triggers in other
+      # workflows. Dispatch explicitly so the cross-platform build runs.
+      - name: Dispatch release workflow
+        if: steps.bump.outputs.bump != 'none'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NEW_TAG="${{ steps.version.outputs.new_tag }}"
+          gh workflow run release.yml \
+            --repo "${{ github.repository }}" \
+            --ref "$NEW_TAG"
+          echo "Dispatched release.yml for ${NEW_TAG}"
+
+      - name: Skip message
+        if: steps.bump.outputs.bump == 'none'
+        run: |
+          echo "No releasable commits since ${{ steps.bump.outputs.latest_tag }}."
+          echo "Only docs/chore/ci commits found - skipping version bump."
