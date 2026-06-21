@@ -295,7 +295,10 @@ mod tests {
         assert!(out.contains("Name"), "header Name missing: {out}");
         assert!(out.contains("Type"), "header Type missing: {out}");
         assert!(out.contains("Owner"), "header Owner missing: {out}");
-        assert!(out.contains("(No results)"), "no-results marker missing: {out}");
+        assert!(
+            out.contains("(No results)"),
+            "no-results marker missing: {out}"
+        );
         assert!(out.contains("(0 rows)"), "row count missing: {out}");
     }
 
