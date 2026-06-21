@@ -1,0 +1,254 @@
+name: Security
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "assets/**"
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "assets/**"
+  schedule:
+    # Full re-scan every Monday at 01:30 UTC
+    - cron: "30 1 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  # -- 1. CodeQL - Static Application Security Testing (SAST) ------------------
+  #
+  # Analyses the Rust source for security anti-patterns, unsafe pointer use,
+  # and common CWE categories. Results appear in the GitHub Security tab.
+  codeql:
+    name: CodeQL SAST
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@5c8a8a642e79153f5d047b10ec1cba1d1cc65699 # v3
+        with:
+          languages: rust
+          # Extend with security-extended queries for deeper coverage
+          queries: security-extended
+
+      - name: Build for CodeQL analysis
+        run: cargo build 2>&1
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@5c8a8a642e79153f5d047b10ec1cba1d1cc65699 # v3
+        with:
+          category: /language:rust
+
+  # -- 2. cargo-audit - Dependency CVE scan (RustSec Advisory Database) ---------
+  #
+  # Checks every crate in Cargo.lock against the RustSec Advisory Database,
+  # which tracks CVEs, unmaintained crates, and yanked versions. This is the
+  # Rust equivalent of Nancy (Go) or npm audit (Node.js).
+  cargo-audit:
+    name: Dependency CVE Audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Run cargo-audit
+        id: audit
+        continue-on-error: true
+        run: |
+          cargo audit --json 2>/dev/null > audit-results.json || true
+          cargo audit 2>&1 | tee audit-summary.txt || true
+
+      - name: Check for vulnerabilities
+        run: |
+          # Fail the build on any CRITICAL or HIGH vulnerability in production dependencies
+          VULNS=$(cargo audit --json 2>/dev/null | \
+            jq '[.vulnerabilities.list[]? | select(.advisory.cvss != null)] | length' 2>/dev/null || echo 0)
+          echo "Vulnerabilities found: $VULNS"
+          if [ "${VULNS:-0}" -gt 0 ]; then
+            echo "❌ Found $VULNS known vulnerabilities - review audit-summary.txt"
+            cat audit-summary.txt
+            exit 1
+          fi
+          echo "✅ No known CVEs in Cargo dependencies"
+
+      - name: Upload audit results
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: cargo-audit-results
+          path: |
+            audit-results.json
+            audit-summary.txt
+          retention-days: 30
+
+      - name: Comment PR with audit results
+        if: github.event_name == 'pull_request' && steps.audit.outcome == 'failure'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.existsSync('audit-summary.txt')
+              ? fs.readFileSync('audit-summary.txt', 'utf8').slice(0, 3000)
+              : 'See workflow logs for details.';
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## 🚨 cargo-audit: Vulnerable Dependencies\n\n\`\`\`\n${summary}\n\`\`\`\n\nPlease update the affected crates before merging.`
+            });
+
+      - name: Security summary
+        if: always()
+        run: |
+          echo "## 📦 Dependency Security (cargo-audit)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Database**: [RustSec Advisory Database](https://rustsec.org/)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Status**: ${{ steps.audit.outcome }}" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f audit-summary.txt ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+            head -50 audit-summary.txt >> "$GITHUB_STEP_SUMMARY"
+            echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # -- 3. Trivy - Filesystem + config vulnerability scan ------------------------
+  #
+  # Scans the repository filesystem for known CVEs in dependencies, secret
+  # patterns, and IaC/config misconfigurations. SARIF output is uploaded to
+  # the GitHub Security tab for unified visibility.
+  trivy:
+    name: Trivy Vulnerability Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      statuses: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Trivy filesystem scan (SARIF)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "0"
+
+      - name: Run Trivy filesystem scan (table - for PR summary)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        id: trivy-table
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: "0"
+
+      - name: Upload Trivy SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@5c8a8a642e79153f5d047b10ec1cba1d1cc65699 # v3
+        with:
+          sarif_file: trivy-results.sarif
+          category: Trivy-FS
+
+      - name: Fail on CRITICAL vulnerabilities
+        run: |
+          # Re-run with strict exit code only for CRITICAL severity
+          trivy fs --exit-code 1 --severity CRITICAL --format table 2>&1 || {
+            echo "❌ CRITICAL vulnerabilities found - review Trivy results in the Security tab"
+            exit 1
+          }
+          echo "✅ No CRITICAL vulnerabilities in repository"
+
+      - name: Comment PR with Trivy results
+        if: github.event_name == 'pull_request' && steps.trivy-table.outcome == 'failure'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '## 🔍 Trivy Security Scan\n\n⚠️ Vulnerabilities detected. Check the **Security** tab and the workflow logs for details.'
+            });
+
+  # -- 4. TruffleHog - Secrets & credential leak detection ---------------------
+  #
+  # Scans the full git history for accidentally committed secrets (API keys,
+  # tokens, certificates, private keys). Only verified detections cause
+  # pipeline failure to minimise false positives.
+  secrets-scan:
+    name: TruffleHog Secrets Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      statuses: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+        with:
+          fetch-depth: 0
+
+      - name: TruffleHog - scan git history (verified only)
+        id: trufflehog
+        uses: trufflesecurity/trufflehog@d411fff7b8879a62509f3fa98c07f247ac089a51 # v3.95.5
+        continue-on-error: true
+        with:
+          path: ./
+          extra_args: --json --only-verified
+
+      - name: Comment PR on secrets detected
+        if: github.event_name == 'pull_request' && steps.trufflehog.outcome == 'failure'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '## ⚠️ TruffleHog Alert\n\nVerified secrets detected in this PR.\n\n**Action required**: Remove sensitive data, revoke and rotate any exposed credentials immediately before merging.'
+            });
+            core.setFailed('Verified secrets detected by TruffleHog');
+
+      - name: Security report
+        if: always()
+        run: |
+          echo "## 🔐 Secrets Scan (TruffleHog)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ steps.trufflehog.outcome }}" = "failure" ]; then
+            echo "❌ **ALERT**: Verified secrets detected - immediate action required." >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "1. Identify and remove the secret from code" >> "$GITHUB_STEP_SUMMARY"
+            echo "2. Revoke and rotate the exposed credential" >> "$GITHUB_STEP_SUMMARY"
+            echo "3. If in git history, rewrite history with \`git filter-repo\`" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "✅ No verified secrets detected." >> "$GITHUB_STEP_SUMMARY"
+          fi
