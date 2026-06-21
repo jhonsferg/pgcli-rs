@@ -1182,8 +1182,7 @@ async fn run(args: CliArgs) -> pgcli_rs::Result<()> {
                             atty::is(atty::Stream::Stdout),
                         )
                     } else {
-                        let table_out =
-                            format_result(&result, &format, &opts).unwrap_or_default();
+                        let table_out = format_result(&result, &format, &opts).unwrap_or_default();
                         // For DML with RETURNING, also emit the command tag (psql compat).
                         let verb = result.command_tag.split_whitespace().next().unwrap_or("");
                         if matches!(verb, "INSERT" | "UPDATE" | "DELETE") {
