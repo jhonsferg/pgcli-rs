@@ -1,0 +1,55 @@
+# cargo-deny configuration
+# Run: cargo install cargo-deny && cargo deny check
+# Docs: https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+# Check all features, not just the default set
+all-features = true
+
+# -- License policy ------------------------------------------------------------
+[licenses]
+# Permitted SPDX identifiers — keep this conservative.
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "ISC",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "Unicode-DFS-2016",
+  "Zlib",
+  "CC0-1.0",
+]
+# Treat any license that does not appear in `allow` as an error.
+unlicensed = "deny"
+copyleft   = "warn"
+# Default confidence threshold for automated license detection.
+confidence-threshold = 0.93
+
+# -- Security advisories -------------------------------------------------------
+[advisories]
+version = 2
+# Deny crates with known security vulnerabilities.
+vulnerability = "deny"
+unmaintained  = "warn"
+yanked        = "deny"
+notice        = "warn"
+
+# -- Crate bans ----------------------------------------------------------------
+[bans]
+# Warn on duplicate versions of the same crate.
+multiple-versions = "warn"
+# Deny any crate that links against libpq or any C PostgreSQL bindings —
+# this enforces the zero-native-deps goal.
+deny = [
+  { name = "pq-sys" },
+  { name = "libpq" },
+  { name = "postgres" },          # links libpq
+]
+skip-tree = []
+
+# -- Source policy -------------------------------------------------------------
+[sources]
+unknown-registry = "deny"
+unknown-git      = "warn"
+allow-registry   = ["https://github.com/rust-lang/crates.io-index"]
