@@ -1,7 +1,8 @@
 /// Aligned table renderer using `comfy-table`.
 use colored::Colorize;
 use comfy_table::{
-    modifiers::UTF8_ROUND_CORNERS, presets, Cell, CellAlignment, ContentArrangement, Table,
+    modifiers::UTF8_ROUND_CORNERS, presets, Cell, CellAlignment, ColumnConstraint,
+    ContentArrangement, Table, Width,
 };
 
 use crate::error::Result;
@@ -52,28 +53,51 @@ fn format_table(result: &QueryResult, opts: &FormatOptions) -> Result<String> {
             })
             .collect();
         table.set_header(headers);
+
+        // Set a minimum column width equal to the plain header text length so
+        // that column borders never collapse when there are no data rows.
+        for (i, col) in result.columns.iter().enumerate() {
+            let min_w = col.name.len().max(1) as u16;
+            if let Some(column) = table.column_mut(i) {
+                column.set_constraint(ColumnConstraint::LowerBoundary(Width::Fixed(min_w)));
+            }
+        }
     }
 
-    // Data rows.
-    for row in &result.rows {
-        let cells: Vec<Cell> = row
-            .values
-            .iter()
-            .zip(&result.columns)
-            .map(|(v, col)| {
-                let mut s = cell_display_typed(v, &opts.null_display, &col.type_name);
-                if opts.numeric_locale && is_numeric(v) {
-                    s = apply_numeric_locale(&s);
-                }
-                let s = truncate_cell(&s, opts.max_column_width);
-                let mut cell = Cell::new(s);
-                if is_numeric(v) {
-                    cell = cell.set_alignment(CellAlignment::Right);
-                }
-                cell
-            })
-            .collect();
-        table.add_row(cells);
+    if result.rows.is_empty() {
+        // Insert a centred "(No results)" message row so the user gets visual
+        // feedback without an eerily blank table body.
+        if !opts.tuples_only && !result.columns.is_empty() {
+            let ncols = result.columns.len();
+            let mut cells: Vec<Cell> =
+                vec![Cell::new("(No results)").set_alignment(CellAlignment::Center)];
+            for _ in 1..ncols {
+                cells.push(Cell::new(""));
+            }
+            table.add_row(cells);
+        }
+    } else {
+        // Data rows.
+        for row in &result.rows {
+            let cells: Vec<Cell> = row
+                .values
+                .iter()
+                .zip(&result.columns)
+                .map(|(v, col)| {
+                    let mut s = cell_display_typed(v, &opts.null_display, &col.type_name);
+                    if opts.numeric_locale && is_numeric(v) {
+                        s = apply_numeric_locale(&s);
+                    }
+                    let s = truncate_cell(&s, opts.max_column_width);
+                    let mut cell = Cell::new(s);
+                    if is_numeric(v) {
+                        cell = cell.set_alignment(CellAlignment::Right);
+                    }
+                    cell
+                })
+                .collect();
+            table.add_row(cells);
+        }
     }
 
     out.push_str(&table.to_string());
@@ -261,6 +285,21 @@ mod tests {
         };
         let out = TableFormatter.format(&result, &opts).unwrap();
         assert!(!out.contains("(1 row)"));
+    }
+
+    #[test]
+    fn empty_table_shows_no_results_and_zero_rows() {
+        let result = make_result(&["Name", "Type", "Owner"], &[]);
+        let opts = FormatOptions::default();
+        let out = TableFormatter.format(&result, &opts).unwrap();
+        assert!(out.contains("Name"), "header Name missing: {out}");
+        assert!(out.contains("Type"), "header Type missing: {out}");
+        assert!(out.contains("Owner"), "header Owner missing: {out}");
+        assert!(
+            out.contains("(No results)"),
+            "no-results marker missing: {out}"
+        );
+        assert!(out.contains("(0 rows)"), "row count missing: {out}");
     }
 
     #[test]
