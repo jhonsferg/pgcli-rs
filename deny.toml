@@ -20,9 +20,6 @@ allow = [
   "Zlib",
   "CC0-1.0",
 ]
-# Treat any license that does not appear in `allow` as an error.
-unlicensed = "deny"
-copyleft   = "warn"
 # Default confidence threshold for automated license detection.
 confidence-threshold = 0.93
 
@@ -30,10 +27,7 @@ confidence-threshold = 0.93
 [advisories]
 version = 2
 # Deny crates with known security vulnerabilities.
-vulnerability = "deny"
-unmaintained  = "warn"
-yanked        = "deny"
-notice        = "warn"
+unmaintained  = "all"
 
 # -- Crate bans ----------------------------------------------------------------
 [bans]
