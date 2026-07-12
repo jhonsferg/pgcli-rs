@@ -180,4 +180,47 @@ mod tests {
         mgr2.load().unwrap();
         assert_eq!(mgr2.entries().len(), 2);
     }
+
+    #[test]
+    fn load_missing_file_is_ok_and_empty() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("pgcli_rs_test_history_does_not_exist.hist");
+        let _ = std::fs::remove_file(&path);
+        let mut mgr = HistoryManager::with_path(path, 100);
+        mgr.load().unwrap();
+        assert!(mgr.entries().is_empty());
+    }
+
+    #[test]
+    fn load_honours_max_entries_by_keeping_tail() {
+        let f = NamedTempFile::new().unwrap();
+        let path = f.path().to_path_buf();
+        std::fs::write(&path, "a\nb\nc\nd\ne\n").unwrap();
+        let mut mgr = HistoryManager::with_path(path, 3);
+        mgr.load().unwrap();
+        assert_eq!(mgr.entries(), ["c", "d", "e"]);
+    }
+
+    #[test]
+    fn flush_creates_parent_directories() {
+        let base =
+            std::env::temp_dir().join(format!("pgcli_rs_test_hist_dir_{}", std::process::id()));
+        let path = base.join("nested").join("history.hist");
+        let _ = std::fs::remove_dir_all(&base);
+
+        let mut mgr = HistoryManager::with_path(path.clone(), 10);
+        mgr.add("SELECT 1").unwrap();
+        assert!(path.exists());
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn new_default_resolves_a_path_under_home() {
+        // Just verifies the constructor succeeds and returns a sane path;
+        // it does not touch the file system.
+        let mgr = HistoryManager::new_default().expect("home dir should be resolvable in CI");
+        assert!(mgr.path.to_string_lossy().contains(".pgcli-rs_history"));
+        assert_eq!(mgr.max_entries, DEFAULT_MAX_ENTRIES);
+    }
 }
