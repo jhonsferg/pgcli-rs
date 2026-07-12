@@ -110,7 +110,7 @@ pub fn build_native_tls(config: &TlsConfig) -> Result<postgres_native_tls::MakeT
 }
 
 // -- rustls backend ------------------------------------------------------------
-// Pure-Rust TLS using tokio-rustls / rustls 0.21.  No OS TLS libraries.
+// Pure-Rust TLS using tokio-rustls / rustls 0.23.  No OS TLS libraries.
 // Used for fully static musl builds where native-tls is not available.
 //
 // tokio-postgres 0.7.x requires:
@@ -191,7 +191,7 @@ pub struct RustlsConnector {
 /// Per-connection TLS handshake state created by [`RustlsConnector`].
 pub struct RustlsConnect {
     connector: tokio_rustls::TlsConnector,
-    domain: tokio_rustls::rustls::ServerName,
+    domain: rustls_pki_types::ServerName<'static>,
 }
 
 #[cfg(feature = "rustls-backend")]
@@ -204,7 +204,7 @@ where
     type Error = std::io::Error;
 
     fn make_tls_connect(&mut self, hostname: &str) -> std::io::Result<RustlsConnect> {
-        let domain = tokio_rustls::rustls::ServerName::try_from(hostname)
+        let domain = rustls_pki_types::ServerName::try_from(hostname.to_string())
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
         Ok(RustlsConnect {
             connector: tokio_rustls::TlsConnector::from(self.config.clone()),
@@ -249,53 +249,46 @@ where
 /// read or parsed.
 pub fn build_rustls(config: &TlsConfig) -> Result<RustlsConnector> {
     use std::sync::Arc;
-    use tokio_rustls::rustls::{
-        Certificate, ClientConfig, OwnedTrustAnchor, PrivateKey, RootCertStore,
-    };
+    use tokio_rustls::rustls::{ClientConfig, RootCertStore};
+
+    // rustls 0.23 requires a process-wide default `CryptoProvider`. Installing it
+    // is idempotent from our perspective: if another call already installed one
+    // (e.g. from a previous connection attempt), we simply keep using it.
+    let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
 
     let mut root_store = RootCertStore::empty();
 
     if let Some(ca_path) = &config.ca_path {
         let ca_data = std::fs::read(ca_path)
             .map_err(|e| PgCliError::Connection(format!("failed to read CA cert: {e}")))?;
-        let certs = rustls_pemfile::certs(&mut ca_data.as_slice())
-            .map_err(|e| PgCliError::Connection(format!("invalid CA cert PEM: {e}")))?;
-        for cert in certs {
+        for cert in rustls_pemfile::certs(&mut ca_data.as_slice()) {
+            let cert =
+                cert.map_err(|e| PgCliError::Connection(format!("invalid CA cert PEM: {e}")))?;
             root_store
-                .add(&Certificate(cert))
+                .add(cert)
                 .map_err(|e| PgCliError::Connection(format!("invalid CA cert: {e}")))?;
         }
     } else {
-        root_store.add_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.iter().map(|ta| {
-            OwnedTrustAnchor::from_subject_spki_name_constraints(
-                ta.subject,
-                ta.spki,
-                ta.name_constraints,
-            )
-        }));
+        root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     }
 
-    let builder = ClientConfig::builder()
-        .with_safe_defaults()
-        .with_root_certificates(root_store);
+    let builder = ClientConfig::builder().with_root_certificates(root_store);
 
     let tls_config =
         if let (Some(cert_path), Some(key_path)) = (&config.cert_path, &config.key_path) {
             let cert_data = std::fs::read(cert_path)
                 .map_err(|e| PgCliError::Connection(format!("failed to read client cert: {e}")))?;
             let certs = rustls_pemfile::certs(&mut cert_data.as_slice())
-                .map_err(|e| PgCliError::Connection(format!("invalid client cert PEM: {e}")))?
-                .into_iter()
-                .map(Certificate)
-                .collect::<Vec<_>>();
+                .collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(|e| PgCliError::Connection(format!("invalid client cert PEM: {e}")))?;
 
             let key_data = std::fs::read(key_path)
                 .map_err(|e| PgCliError::Connection(format!("failed to read client key: {e}")))?;
             let key = rustls_pemfile::pkcs8_private_keys(&mut key_data.as_slice())
-                .map_err(|e| PgCliError::Connection(format!("invalid client key PEM: {e}")))?
-                .into_iter()
                 .next()
-                .map(PrivateKey)
+                .transpose()
+                .map_err(|e| PgCliError::Connection(format!("invalid client key PEM: {e}")))?
+                .map(rustls_pki_types::PrivateKeyDer::Pkcs8)
                 .ok_or_else(|| {
                     PgCliError::Connection(
                         "no PKCS#8 private key found in key file; convert with: \
