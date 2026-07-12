@@ -183,4 +183,62 @@ mod tests {
         assert_eq!(r.table_names, vec!["users"]);
         assert_eq!(r.schemas, vec!["public"]);
     }
+
+    #[test]
+    fn default_cache_all_fields_empty() {
+        let cache = SchemaCache::default();
+        assert!(cache.table_names.is_empty());
+        assert!(cache.qualified_tables.is_empty());
+        assert!(cache.schemas.is_empty());
+        assert!(cache.columns.is_empty());
+        assert!(cache.functions.is_empty());
+        assert!(cache.table_columns.is_empty());
+    }
+
+    #[test]
+    fn qualified_tables_and_columns_round_trip() {
+        let cache = SchemaCache::new_shared();
+        {
+            let mut w = cache.write().unwrap();
+            w.qualified_tables.push("public.users".to_string());
+            w.columns.push("id".to_string());
+            w.columns.push("name".to_string());
+            w.functions.push("now".to_string());
+            w.table_columns.push((
+                "users".to_string(),
+                vec!["id".to_string(), "name".to_string()],
+            ));
+        }
+        let r = cache.read().unwrap();
+        assert_eq!(r.qualified_tables, vec!["public.users"]);
+        assert_eq!(r.columns, vec!["id", "name"]);
+        assert_eq!(r.functions, vec!["now"]);
+        assert_eq!(r.table_columns.len(), 1);
+        assert_eq!(r.table_columns[0].0, "users");
+        assert_eq!(r.table_columns[0].1, vec!["id", "name"]);
+    }
+
+    #[test]
+    fn clearing_cache_fields_resets_to_empty() {
+        let cache = SchemaCache::new_shared();
+        {
+            let mut w = cache.write().unwrap();
+            w.table_names.push("a".to_string());
+            w.table_names.clear();
+        }
+        let r = cache.read().unwrap();
+        assert!(r.table_names.is_empty());
+    }
+
+    #[test]
+    fn shared_cache_is_cloneable_and_shares_state() {
+        let cache = SchemaCache::new_shared();
+        let cache2 = cache.clone();
+        {
+            let mut w = cache.write().unwrap();
+            w.schemas.push("public".to_string());
+        }
+        let r = cache2.read().unwrap();
+        assert_eq!(r.schemas, vec!["public"]);
+    }
 }
