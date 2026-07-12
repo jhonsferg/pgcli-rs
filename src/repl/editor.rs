@@ -339,4 +339,84 @@ mod tests {
         let out = primary_prompt("mydb", "bob", "srv", 5432, false, "", Some("%n@%/%# "));
         assert_eq!(out, "bob@mydb> ");
     }
+
+    #[test]
+    fn expand_prompt_unknown_sequence_kept_literal() {
+        let s = expand_prompt("%z", "db", "u", "h", 5432, false, "");
+        assert_eq!(s, "%z");
+    }
+
+    #[test]
+    fn expand_prompt_trailing_percent() {
+        let s = expand_prompt("abc%", "db", "u", "h", 5432, false, "");
+        assert_eq!(s, "abc%");
+    }
+
+    #[test]
+    fn continuation_prompt_uses_custom_template() {
+        let out = continuation_prompt("mydb", "bob", "srv", 5432, "*", Some("%/[%x]-> "));
+        assert_eq!(out, "mydb[*]-> ");
+    }
+
+    fn make_editor() -> ReplEditor {
+        let highlighter = SqlHighlighter::new("none");
+        ReplEditor::new(
+            "testdb",
+            "tester",
+            "localhost",
+            5432,
+            false,
+            highlighter,
+            None,
+        )
+        .expect("editor construction should not fail without a history file")
+    }
+
+    #[test]
+    fn new_editor_construction_succeeds() {
+        let _editor = make_editor();
+    }
+
+    #[test]
+    fn setters_update_prompt_fields() {
+        let mut editor = make_editor();
+        editor.set_dbname("otherdb");
+        editor.set_user("alice");
+        editor.set_host_port("otherhost", 5433);
+        editor.set_superuser(true);
+        assert_eq!(editor.dbname, "otherdb");
+        assert_eq!(editor.user, "alice");
+        assert_eq!(editor.host, "otherhost");
+        assert_eq!(editor.port, 5433);
+        assert!(editor.is_superuser);
+    }
+
+    #[test]
+    fn save_history_without_path_is_noop_ok() {
+        let mut editor = make_editor();
+        assert!(editor.save_history().is_ok());
+    }
+
+    #[test]
+    fn save_history_with_path_writes_file() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("pgcli_rs_test_editor_history");
+        let _ = std::fs::remove_file(&path);
+
+        let highlighter = SqlHighlighter::new("none");
+        let mut editor = ReplEditor::new(
+            "testdb",
+            "tester",
+            "localhost",
+            5432,
+            false,
+            highlighter,
+            Some(path.clone()),
+        )
+        .expect("editor construction failed");
+
+        let result = editor.save_history();
+        let _ = std::fs::remove_file(&path);
+        assert!(result.is_ok());
+    }
 }

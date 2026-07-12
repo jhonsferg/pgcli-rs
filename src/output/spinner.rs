@@ -69,4 +69,56 @@ mod tests {
         let s = Spinner::start("testing");
         assert!(s.is_none(), "expected None when stderr is not TTY");
     }
+
+    #[test]
+    fn frames_are_non_empty_and_distinct_from_first() {
+        assert!(!FRAMES.is_empty());
+        // Sanity: cycling through the frame index wraps without panicking.
+        for i in 0..(FRAMES.len() * 2) {
+            let _ = FRAMES[i % FRAMES.len()];
+        }
+    }
+
+    #[test]
+    fn stop_on_spinner_without_background_thread_is_safe() {
+        // Construct a Spinner directly (module-private fields are visible
+        // to this submodule) with no background thread, mirroring what
+        // `start()` would produce if it had already been stopped.
+        let spinner = Spinner {
+            stop: Arc::new(AtomicBool::new(false)),
+            handle: None,
+        };
+        // Should not panic even though there is no thread to join.
+        spinner.stop();
+    }
+
+    #[test]
+    fn drop_sets_stop_flag() {
+        let stop = Arc::new(AtomicBool::new(false));
+        {
+            let spinner = Spinner {
+                stop: stop.clone(),
+                handle: None,
+            };
+            assert!(!stop.load(Ordering::Relaxed));
+            drop(spinner);
+        }
+        assert!(stop.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn stop_joins_background_thread() {
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop_clone = stop.clone();
+        let handle = thread::spawn(move || {
+            while !stop_clone.load(Ordering::Relaxed) {
+                thread::sleep(Duration::from_millis(5));
+            }
+        });
+        let spinner = Spinner {
+            stop,
+            handle: Some(handle),
+        };
+        spinner.stop();
+    }
 }

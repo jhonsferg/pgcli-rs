@@ -345,4 +345,74 @@ mod tests {
     fn build_no_tls_ok() {
         build_no_tls().expect("NoTls build failed");
     }
+
+    #[test]
+    fn tls_config_new_has_no_client_certs() {
+        let cfg = TlsConfig::new(TlsMode::VerifyFull);
+        assert!(cfg.cert_path.is_none());
+        assert!(cfg.key_path.is_none());
+        assert!(cfg.ca_path.is_none());
+    }
+
+    #[test]
+    fn tls_mode_default_is_prefer() {
+        assert_eq!(TlsMode::default(), TlsMode::Prefer);
+    }
+
+    #[cfg(feature = "rustls-backend")]
+    #[test]
+    fn build_rustls_with_webpki_roots_succeeds() {
+        // No ca_path -> falls back to the webpki-roots trust store. This
+        // exercises the RootCertStore/ClientConfig wiring introduced by the
+        // rustls 0.23 migration without needing a live TLS handshake.
+        let cfg = TlsConfig::new(TlsMode::VerifyFull);
+        let connector = build_rustls(&cfg);
+        assert!(connector.is_ok(), "expected build_rustls to succeed");
+    }
+
+    #[cfg(feature = "rustls-backend")]
+    #[test]
+    fn build_rustls_rejects_missing_ca_file() {
+        let mut cfg = TlsConfig::new(TlsMode::VerifyFull);
+        cfg.ca_path = Some(std::path::PathBuf::from(
+            "/definitely/does/not/exist/ca.pem",
+        ));
+        let result = build_rustls(&cfg);
+        assert!(result.is_err());
+    }
+
+    #[cfg(feature = "rustls-backend")]
+    #[test]
+    fn build_rustls_rejects_invalid_ca_pem() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("pgcli_rs_test_invalid_ca.pem");
+        // Well-formed PEM markers but non-base64 payload: rustls_pemfile
+        // recognizes the CERTIFICATE block and fails decoding its contents,
+        // unlike plain garbage which it silently skips as "no PEM found".
+        std::fs::write(
+            &path,
+            b"-----BEGIN CERTIFICATE-----\nnot-valid-base64!!!\n-----END CERTIFICATE-----\n",
+        )
+        .unwrap();
+
+        let mut cfg = TlsConfig::new(TlsMode::VerifyFull);
+        cfg.ca_path = Some(path.clone());
+        let result = build_rustls(&cfg);
+
+        let _ = std::fs::remove_file(&path);
+        assert!(result.is_err());
+    }
+
+    #[cfg(feature = "rustls-backend")]
+    #[test]
+    fn make_tls_connect_rejects_invalid_hostname() {
+        let cfg = TlsConfig::new(TlsMode::VerifyFull);
+        let mut connector = build_rustls(&cfg).expect("connector build failed");
+        // A bare IPv6-looking garbage string is not a valid DNS name or IP.
+        let result = tokio_postgres::tls::MakeTlsConnect::<tokio::net::TcpStream>::make_tls_connect(
+            &mut connector,
+            "not a valid hostname!!",
+        );
+        assert!(result.is_err());
+    }
 }

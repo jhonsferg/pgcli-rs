@@ -689,4 +689,83 @@ mod tests {
         assert_eq!(runner.resolve_value(":K"), "found");
         assert_eq!(runner.resolve_value(":MISSING"), "");
     }
+
+    #[test]
+    fn condition_ordering_comparisons() {
+        let runner = ScriptRunner::new();
+        assert!(runner.evaluate_condition("'a' < 'b'"));
+        assert!(runner.evaluate_condition("'b' > 'a'"));
+        assert!(runner.evaluate_condition("'a' <= 'a'"));
+        assert!(runner.evaluate_condition("'a' >= 'a'"));
+        assert!(!runner.evaluate_condition("'b' < 'a'"));
+    }
+
+    #[test]
+    fn condition_unset_variable_is_falsy() {
+        let runner = ScriptRunner::new();
+        assert!(!runner.evaluate_condition(":NOPE"));
+    }
+
+    #[test]
+    fn condition_boolean_literals() {
+        let runner = ScriptRunner::new();
+        assert!(runner.evaluate_condition("true"));
+        assert!(runner.evaluate_condition("TRUE"));
+        assert!(runner.evaluate_condition("1"));
+        assert!(!runner.evaluate_condition("false"));
+        assert!(!runner.evaluate_condition("0"));
+        assert!(!runner.evaluate_condition(""));
+        assert!(!runner.evaluate_condition("garbage"));
+    }
+
+    #[test]
+    fn with_variables_pre_populates_store() {
+        let mut vars = HashMap::new();
+        vars.insert("FOO".to_string(), "bar".to_string());
+        let runner = ScriptRunner::with_variables(vars);
+        assert_eq!(runner.resolve_value(":FOO"), "bar");
+    }
+
+    #[test]
+    fn default_runner_matches_new() {
+        let runner = ScriptRunner::default();
+        assert_eq!(runner.on_error_mode, "stop");
+        assert!(!runner.single_step);
+    }
+
+    #[test]
+    fn update_dollar_tag_enters_and_exits_anonymous_block() {
+        let mut tag: Option<String> = None;
+        update_dollar_tag("CREATE FUNCTION f() AS $$", &mut tag);
+        assert_eq!(tag, Some(String::new()));
+        update_dollar_tag("BEGIN RETURN 1; END; $$ LANGUAGE plpgsql;", &mut tag);
+        assert_eq!(tag, None);
+    }
+
+    #[test]
+    fn update_dollar_tag_named_tag_round_trip() {
+        let mut tag: Option<String> = None;
+        update_dollar_tag("AS $body$", &mut tag);
+        assert_eq!(tag, Some("body".to_string()));
+        // A different tag encountered mid-block must not close it.
+        update_dollar_tag("SELECT $other$ inner $other$;", &mut tag);
+        assert_eq!(tag, Some("body".to_string()));
+        update_dollar_tag("END; $body$ LANGUAGE plpgsql;", &mut tag);
+        assert_eq!(tag, None);
+    }
+
+    #[test]
+    fn update_dollar_tag_no_dollar_signs_is_noop() {
+        let mut tag: Option<String> = None;
+        update_dollar_tag("SELECT 1;", &mut tag);
+        assert_eq!(tag, None);
+    }
+
+    #[test]
+    fn update_dollar_tag_lone_dollar_is_ignored() {
+        // e.g. `$1` positional parameter reference-not a valid open tag.
+        let mut tag: Option<String> = None;
+        update_dollar_tag("SELECT $1 WHERE x = $2;", &mut tag);
+        assert_eq!(tag, None);
+    }
 }
