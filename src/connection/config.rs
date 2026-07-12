@@ -345,6 +345,7 @@ fn read_pgpass_file(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::Parser;
 
     #[test]
     fn parse_full_uri() {
@@ -429,5 +430,138 @@ mod tests {
         let (_dir, path) = write_pgpass("# comment\n\nlocalhost:5432:db:user:pass\n");
         let pw = read_pgpass_file(&path, "localhost", 5432, "db", "user");
         assert_eq!(pw.as_deref(), Some("pass"));
+    }
+
+    #[test]
+    fn pgpass_missing_file_returns_none() {
+        let pw = read_pgpass_file(
+            &PathBuf::from("/definitely/does/not/exist/.pgpass"),
+            "localhost",
+            5432,
+            "db",
+            "user",
+        );
+        assert!(pw.is_none());
+    }
+
+    #[test]
+    fn pgpass_short_line_is_skipped() {
+        let (_dir, path) = write_pgpass("localhost:5432:db\n");
+        let pw = read_pgpass_file(&path, "localhost", 5432, "db", "user");
+        assert!(pw.is_none());
+    }
+
+    #[test]
+    fn from_uri_ipv6_host_with_port() {
+        let cfg = ConnectionConfig::from_uri("postgresql://[::1]:5433/mydb").expect("parse ok");
+        assert_eq!(cfg.host, "::1");
+        assert_eq!(cfg.port, 5433);
+        assert_eq!(cfg.database, "mydb");
+    }
+
+    #[test]
+    fn from_uri_ipv6_host_without_port() {
+        let cfg = ConnectionConfig::from_uri("postgresql://[::1]/mydb").expect("parse ok");
+        assert_eq!(cfg.host, "::1");
+        assert_eq!(cfg.port, 5432);
+    }
+
+    #[test]
+    fn from_uri_unclosed_ipv6_bracket_errors() {
+        let result = ConnectionConfig::from_uri("postgresql://[::1/mydb");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn from_uri_invalid_port_errors() {
+        let result = ConnectionConfig::from_uri("postgresql://host:notaport/mydb");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn from_uri_invalid_scheme_errors() {
+        let result = ConnectionConfig::from_uri("mysql://host/mydb");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn from_uri_host_only_no_slash() {
+        let cfg = ConnectionConfig::from_uri("postgresql://myhost").expect("parse ok");
+        assert_eq!(cfg.host, "myhost");
+        assert_eq!(cfg.database, "");
+    }
+
+    fn base_args() -> CliArgs {
+        CliArgs::parse_from(["pgcli-rs"])
+    }
+
+    #[test]
+    fn resolve_tls_mode_no_tls_flag() {
+        let mut args = base_args();
+        args.no_tls = true;
+        assert_eq!(resolve_tls_mode(&args).unwrap(), TlsMode::Disabled);
+    }
+
+    #[test]
+    fn resolve_tls_mode_require_flag() {
+        let mut args = base_args();
+        args.require_tls = true;
+        assert_eq!(resolve_tls_mode(&args).unwrap(), TlsMode::Require);
+    }
+
+    #[test]
+    fn resolve_tls_mode_ca_implies_verify_full() {
+        let mut args = base_args();
+        args.tls_ca = Some(PathBuf::from("/tmp/ca.pem"));
+        assert_eq!(resolve_tls_mode(&args).unwrap(), TlsMode::VerifyFull);
+    }
+
+    #[test]
+    fn resolve_tls_mode_default_is_prefer() {
+        let args = base_args();
+        // Ensure PGSSLMODE isn't set from a leaked prior test/env in this process.
+        std::env::remove_var("PGSSLMODE");
+        assert_eq!(resolve_tls_mode(&args).unwrap(), TlsMode::Prefer);
+    }
+
+    #[test]
+    fn from_cli_args_minimal_uses_defaults() {
+        let args = base_args();
+        std::env::remove_var("PGHOST");
+        std::env::remove_var("PGPORT");
+        std::env::remove_var("PGPASSWORD");
+        std::env::remove_var("PGSSLMODE");
+        let cfg = ConnectionConfig::from_cli_args(&args).expect("should build config");
+        assert_eq!(cfg.host, "localhost");
+        assert_eq!(cfg.port, 5432);
+        assert_eq!(cfg.timeout_secs, 30);
+    }
+
+    #[test]
+    fn from_cli_args_explicit_flags_take_precedence() {
+        let args = CliArgs::parse_from([
+            "pgcli-rs", "-h", "flaghost", "-p", "5555", "-U", "flaguser", "-d", "flagdb",
+        ]);
+        let cfg = ConnectionConfig::from_cli_args(&args).expect("should build config");
+        assert_eq!(cfg.host, "flaghost");
+        assert_eq!(cfg.port, 5555);
+        assert_eq!(cfg.user, "flaguser");
+        assert_eq!(cfg.database, "flagdb");
+    }
+
+    #[test]
+    fn from_cli_args_positional_uri_is_parsed() {
+        let args = CliArgs::parse_from(["pgcli-rs", "postgresql://u:p@urihost:5544/uridb"]);
+        let cfg = ConnectionConfig::from_cli_args(&args).expect("should build config");
+        assert_eq!(cfg.host, "urihost");
+        assert_eq!(cfg.port, 5544);
+        assert_eq!(cfg.database, "uridb");
+    }
+
+    #[test]
+    fn from_cli_args_positional_plain_name_is_database() {
+        let args = CliArgs::parse_from(["pgcli-rs", "justadbname"]);
+        let cfg = ConnectionConfig::from_cli_args(&args).expect("should build config");
+        assert_eq!(cfg.database, "justadbname");
     }
 }
