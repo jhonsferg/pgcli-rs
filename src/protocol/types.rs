@@ -538,4 +538,67 @@ mod tests {
         let b = make_interval(1_500_000, 0, 0);
         assert_eq!(decode_pg_interval(&b), "00:00:01.500000");
     }
+
+    #[test]
+    fn interval_short_raw_returns_empty() {
+        assert_eq!(decode_pg_interval(&[0u8; 4]), "");
+    }
+
+    #[test]
+    fn interval_single_year_and_month_are_singular() {
+        let b = make_interval(0, 0, 13); // 1 year, 1 month
+        assert_eq!(decode_pg_interval(&b), "1 year 1 mon");
+    }
+
+    #[test]
+    fn interval_single_day_is_singular() {
+        let b = make_interval(0, 1, 0);
+        assert_eq!(decode_pg_interval(&b), "1 day");
+    }
+
+    #[test]
+    fn numeric_decode_infinity() {
+        let b = make_numeric(0, 0, 0xD000, 0, &[]);
+        assert_eq!(decode_pg_numeric(&b), "Infinity");
+    }
+
+    #[test]
+    fn numeric_decode_negative_infinity() {
+        let b = make_numeric(0, 0, 0xF000, 0, &[]);
+        assert_eq!(decode_pg_numeric(&b), "-Infinity");
+    }
+
+    #[test]
+    fn numeric_decode_zero() {
+        let b = make_numeric(0, 0, 0, 0, &[]);
+        assert_eq!(decode_pg_numeric(&b), "0");
+    }
+
+    #[test]
+    fn numeric_decode_short_raw_returns_empty() {
+        assert_eq!(decode_pg_numeric(&[0u8; 4]), "");
+    }
+
+    #[test]
+    fn numeric_decode_truncated_groups_returns_empty() {
+        // Header claims 2 digit groups but only provides 1.
+        let mut b = make_numeric(2, 0, 0, 0, &[200]);
+        b.truncate(10); // header (8) + 1 group (2) = 10 bytes, missing the 2nd group
+        assert_eq!(decode_pg_numeric(&b), "");
+    }
+
+    #[test]
+    fn numeric_decode_small_fraction_with_leading_zeros() {
+        // 0.00001234 → ndigits=1, weight=-2, sign=0, dscale=8, groups=[1234]
+        let b = make_numeric(1, -2, 0, 8, &[1234]);
+        assert_eq!(decode_pg_numeric(&b), "0.00001234");
+    }
+
+    #[test]
+    fn oid_constants_map_to_expected_names() {
+        assert_eq!(oid_to_name(OID_BOOL), "bool");
+        assert_eq!(oid_to_name(OID_TEXT), "text");
+        assert_eq!(oid_to_name(OID_JSONB), "jsonb");
+        assert_eq!(oid_to_name(OID_UUID), "uuid");
+    }
 }

@@ -205,4 +205,104 @@ mod tests {
         };
         assert!(qr.has_rows());
     }
+
+    #[test]
+    fn query_result_no_rows_is_false() {
+        let qr = QueryResult {
+            columns: vec![],
+            rows: vec![],
+            affected_rows: Some(0),
+            command_tag: "UPDATE 0".to_string(),
+            duration_ms: 1,
+        };
+        assert!(!qr.has_rows());
+    }
+
+    #[test]
+    fn query_result_column_count() {
+        let qr = QueryResult {
+            columns: vec![
+                Column {
+                    name: "id".to_string(),
+                    type_name: "int4".to_string(),
+                    type_oid: 23,
+                    nullable: false,
+                },
+                Column {
+                    name: "name".to_string(),
+                    type_name: "text".to_string(),
+                    type_oid: 25,
+                    nullable: true,
+                },
+            ],
+            rows: vec![],
+            affected_rows: None,
+            command_tag: "SELECT".to_string(),
+            duration_ms: 0,
+        };
+        assert_eq!(qr.column_count(), 2);
+    }
+
+    #[test]
+    fn cell_value_int2_int8_float_display() {
+        assert_eq!(CellValue::Int2(7).to_string(), "7");
+        assert_eq!(CellValue::Int8(9_999_999_999).to_string(), "9999999999");
+        assert_eq!(CellValue::Float4(1.5).to_string(), "1.5");
+    }
+
+    #[test]
+    fn cell_value_text_display() {
+        assert_eq!(CellValue::Text("hello".to_string()).to_string(), "hello");
+    }
+
+    #[test]
+    fn cell_value_uuid_display() {
+        let u = uuid::Uuid::nil();
+        assert_eq!(
+            CellValue::Uuid(u).to_string(),
+            "00000000-0000-0000-0000-000000000000"
+        );
+    }
+
+    #[test]
+    fn cell_value_json_display() {
+        let v = serde_json::json!({"a": 1});
+        assert_eq!(CellValue::Json(v).to_string(), r#"{"a":1}"#);
+    }
+
+    #[test]
+    fn cell_value_numeric_and_interval_display() {
+        assert_eq!(CellValue::Numeric("3.14".to_string()).to_string(), "3.14");
+        assert_eq!(
+            CellValue::Interval("1 day".to_string()).to_string(),
+            "1 day"
+        );
+    }
+
+    #[test]
+    fn cell_value_date_time_display() {
+        let date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
+        assert_eq!(CellValue::Date(date).to_string(), "2024-01-15");
+
+        let time = NaiveTime::from_hms_opt(13, 30, 0).unwrap();
+        assert_eq!(CellValue::Time(time).to_string(), "13:30:00");
+
+        let ts = NaiveDateTime::new(date, time);
+        assert_eq!(CellValue::Timestamp(ts).to_string(), "2024-01-15 13:30:00");
+    }
+
+    #[test]
+    fn cell_value_unknown_display() {
+        assert_eq!(
+            CellValue::Unknown("custom".to_string()).to_string(),
+            "custom"
+        );
+    }
+
+    #[test]
+    fn cell_value_nested_array_display() {
+        let inner = CellValue::Array(vec![CellValue::Int4(1), CellValue::Int4(2)]);
+        let outer = CellValue::Array(vec![inner, CellValue::Null]);
+        assert_eq!(outer.to_string(), "{{1,2},}");
+    }
 }
