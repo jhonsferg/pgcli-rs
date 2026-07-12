@@ -574,4 +574,155 @@ mod tests {
         assert!(out.contains(r"\end{tabular}"), "end: {out}");
         assert!(out.contains("hello"), "data: {out}");
     }
+
+    fn sample_result() -> crate::protocol::messages::QueryResult {
+        use crate::protocol::messages::{CellValue, Column, QueryResult, Row};
+        QueryResult {
+            columns: vec![
+                Column {
+                    name: "id".into(),
+                    type_name: "int4".into(),
+                    type_oid: 23,
+                    nullable: false,
+                },
+                Column {
+                    name: "name".into(),
+                    type_name: "text".into(),
+                    type_oid: 25,
+                    nullable: true,
+                },
+            ],
+            rows: vec![
+                Row {
+                    values: vec![CellValue::Int4(1), CellValue::Text("alice".into())],
+                },
+                Row {
+                    values: vec![CellValue::Int4(2), CellValue::Null],
+                },
+            ],
+            affected_rows: None,
+            command_tag: "SELECT 2".into(),
+            duration_ms: 3,
+        }
+    }
+
+    #[test]
+    fn tsv_format_has_tab_separated_header_and_rows() {
+        let result = sample_result();
+        let opts = FormatOptions::default();
+        let out = format_result(&result, &OutputFormat::Tsv, &opts).unwrap();
+        assert!(out.starts_with("id\tname\n"), "header: {out}");
+        assert!(out.contains("1\talice\n"), "row: {out}");
+    }
+
+    #[test]
+    fn tsv_format_tuples_only_omits_header() {
+        let result = sample_result();
+        let opts = FormatOptions {
+            tuples_only: true,
+            ..FormatOptions::default()
+        };
+        let out = format_result(&result, &OutputFormat::Tsv, &opts).unwrap();
+        assert!(!out.contains("id\tname"), "header should be absent: {out}");
+    }
+
+    #[test]
+    fn html_format_escapes_and_wraps_rows() {
+        let result = sample_result();
+        let opts = FormatOptions::default();
+        let out = format_result(&result, &OutputFormat::Html, &opts).unwrap();
+        assert!(out.contains("<table>"));
+        assert!(out.contains("<th>id</th>"));
+        assert!(out.contains("<td>alice</td>"));
+        assert!(out.contains("</table>"));
+    }
+
+    #[test]
+    fn unaligned_format_uses_configured_separators() {
+        let result = sample_result();
+        let opts = FormatOptions {
+            field_separator: ",".to_string(),
+            record_separator: ";".to_string(),
+            ..FormatOptions::default()
+        };
+        let out = format_result(&result, &OutputFormat::Unaligned, &opts).unwrap();
+        assert!(out.contains("id,name;"), "header: {out}");
+        assert!(out.contains("1,alice;"), "row: {out}");
+    }
+
+    #[test]
+    fn asciidoc_format_has_table_markers() {
+        let result = sample_result();
+        let opts = FormatOptions::default();
+        let out = format_result(&result, &OutputFormat::Asciidoc, &opts).unwrap();
+        assert!(out.starts_with("|===\n"));
+        assert!(out.trim_end().ends_with("|==="));
+        assert!(out.contains("| id"));
+        assert!(out.contains("| alice"));
+    }
+
+    #[test]
+    fn asciidoc_format_uses_null_display_for_nulls() {
+        let result = sample_result();
+        let opts = FormatOptions {
+            null_display: "[NULL]".to_string(),
+            ..FormatOptions::default()
+        };
+        let out = format_result(&result, &OutputFormat::Asciidoc, &opts).unwrap();
+        assert!(out.contains("[NULL]"), "expected null placeholder: {out}");
+    }
+
+    #[test]
+    fn markdown_format_escapes_pipe_and_newline() {
+        use crate::protocol::messages::{CellValue, Column, QueryResult, Row};
+        let result = QueryResult {
+            columns: vec![Column {
+                name: "v".into(),
+                type_name: "text".into(),
+                type_oid: 25,
+                nullable: true,
+            }],
+            rows: vec![Row {
+                values: vec![CellValue::Text("a|b\nc".into())],
+            }],
+            affected_rows: None,
+            command_tag: "SELECT".into(),
+            duration_ms: 1,
+        };
+        let opts = FormatOptions::default();
+        let out = format_result(&result, &OutputFormat::Markdown, &opts).unwrap();
+        assert!(out.contains(r"a\|b<br>c"), "escaped cell: {out}");
+    }
+
+    #[test]
+    fn colorize_explain_plan_non_terminal_is_passthrough() {
+        let rows = vec![
+            "Seq Scan on foo".to_string(),
+            "  (cost=0.00..1.00)".to_string(),
+        ];
+        let out = colorize_explain_plan(&rows, false);
+        assert_eq!(out, "Seq Scan on foo\n  (cost=0.00..1.00)\n");
+    }
+
+    #[test]
+    fn colorize_explain_plan_terminal_highlights_seq_scan() {
+        let rows = vec!["Seq Scan on foo".to_string()];
+        let out = colorize_explain_plan(&rows, true);
+        // colored crate wraps in ANSI codes when a terminal is claimed;
+        // the underlying text must still be present.
+        assert!(out.contains("Seq Scan on foo"));
+    }
+
+    #[test]
+    fn colorize_explain_plan_handles_actual_time_and_planning_lines() {
+        let rows = vec![
+            "  ->  Index Scan (actual time=150.123..200.456 rows=1 loops=1)".to_string(),
+            "Planning Time: 0.123 ms".to_string(),
+            "Execution Time: 1.234 ms".to_string(),
+        ];
+        let out = colorize_explain_plan(&rows, true);
+        assert!(out.contains("Index Scan"));
+        assert!(out.contains("Planning Time"));
+        assert!(out.contains("Execution Time"));
+    }
 }
