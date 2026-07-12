@@ -262,8 +262,8 @@ pub fn build_rustls(config: &TlsConfig) -> Result<RustlsConnector> {
         let ca_data = std::fs::read(ca_path)
             .map_err(|e| PgCliError::Connection(format!("failed to read CA cert: {e}")))?;
         for cert in rustls_pemfile::certs(&mut ca_data.as_slice()) {
-            let cert = cert
-                .map_err(|e| PgCliError::Connection(format!("invalid CA cert PEM: {e}")))?;
+            let cert =
+                cert.map_err(|e| PgCliError::Connection(format!("invalid CA cert PEM: {e}")))?;
             root_store
                 .add(cert)
                 .map_err(|e| PgCliError::Connection(format!("invalid CA cert: {e}")))?;
