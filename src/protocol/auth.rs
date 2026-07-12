@@ -344,4 +344,98 @@ mod tests {
         let key = pbkdf2_sha256(b"password", b"salt", 4096);
         assert_eq!(key.len(), 32);
     }
+
+    #[test]
+    fn scram_full_round_trip_produces_final_message() {
+        let mut client = ScramClient::new("alice", "hunter2");
+        let first = client.client_first_message();
+        let client_nonce = first
+            .strip_prefix("n,,n=alice,r=")
+            .expect("client nonce prefix")
+            .to_string();
+
+        let server_nonce = format!("{client_nonce}SERVERPART");
+        let salt_b64 = BASE64.encode(b"somesalt");
+        let server_first = format!("r={server_nonce},s={salt_b64},i=4096");
+
+        let final_msg = client
+            .client_final_message(&server_first)
+            .expect("client_final_message should succeed");
+        assert!(final_msg.contains(&format!("r={server_nonce}")));
+        assert!(final_msg.contains("p="));
+    }
+
+    #[test]
+    fn scram_rejects_mismatched_server_nonce() {
+        let mut client = ScramClient::new("alice", "hunter2");
+        client.client_first_message();
+        let salt_b64 = BASE64.encode(b"somesalt");
+        let server_first = format!("r=totally-different-nonce,s={salt_b64},i=4096");
+        let result = client.client_final_message(&server_first);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn scram_rejects_invalid_iteration_count() {
+        let mut client = ScramClient::new("alice", "hunter2");
+        let first = client.client_first_message();
+        let client_nonce = first.strip_prefix("n,,n=alice,r=").unwrap();
+        let salt_b64 = BASE64.encode(b"somesalt");
+        let server_first = format!("r={client_nonce},s={salt_b64},i=notanumber");
+        let result = client.client_final_message(&server_first);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn scram_rejects_invalid_salt_encoding() {
+        let mut client = ScramClient::new("alice", "hunter2");
+        let first = client.client_first_message();
+        let client_nonce = first.strip_prefix("n,,n=alice,r=").unwrap();
+        let server_first = format!("r={client_nonce},s=not-valid-base64!!!,i=4096");
+        let result = client.client_final_message(&server_first);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn scram_verify_server_final_accepts_v_prefix() {
+        let client = ScramClient::new("alice", "hunter2");
+        assert!(client.verify_server_final("v=c29tZXNpZ25hdHVyZQ==").is_ok());
+    }
+
+    #[test]
+    fn scram_verify_server_final_rejects_error() {
+        let client = ScramClient::new("alice", "hunter2");
+        let result = client.verify_server_final("e=invalid-proof");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("invalid-proof"));
+    }
+
+    #[test]
+    fn scram_verify_server_final_rejects_unexpected_format() {
+        let client = ScramClient::new("alice", "hunter2");
+        assert!(client.verify_server_final("garbage").is_err());
+    }
+
+    #[test]
+    fn md5_password_is_deterministic() {
+        let a = md5_password("hunter2", "alice", &[1, 2, 3, 4]);
+        let b = md5_password("hunter2", "alice", &[1, 2, 3, 4]);
+        assert_eq!(a, b);
+        let different_salt = md5_password("hunter2", "alice", &[5, 6, 7, 8]);
+        assert_ne!(a, different_salt);
+    }
+
+    #[test]
+    fn auth_method_variants_are_comparable() {
+        assert_eq!(AuthMethod::Trust, AuthMethod::Trust);
+        assert_ne!(AuthMethod::Trust, AuthMethod::Password);
+        assert_eq!(
+            AuthMethod::Md5 { salt: [1, 2, 3, 4] },
+            AuthMethod::Md5 { salt: [1, 2, 3, 4] }
+        );
+        assert_ne!(
+            AuthMethod::Md5 { salt: [1, 2, 3, 4] },
+            AuthMethod::Md5 { salt: [5, 6, 7, 8] }
+        );
+    }
 }
