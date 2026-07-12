@@ -890,4 +890,46 @@ mod tests {
         assert_ne!(ObjectType::Table, ObjectType::View);
         assert_ne!(ObjectType::Function, ObjectType::Index);
     }
+
+    #[test]
+    fn split_schema_obj_with_schema() {
+        assert_eq!(
+            split_schema_obj("myschema.mytable"),
+            ("myschema".to_string(), "mytable".to_string())
+        );
+    }
+
+    #[test]
+    fn split_schema_obj_without_schema_defaults_public() {
+        assert_eq!(
+            split_schema_obj("mytable"),
+            ("public".to_string(), "mytable".to_string())
+        );
+    }
+
+    #[test]
+    fn split_schema_obj_uses_first_dot_only() {
+        assert_eq!(
+            split_schema_obj("a.b.c"),
+            ("a".to_string(), "b.c".to_string())
+        );
+    }
+
+    #[test]
+    fn split_schema_obj_empty_string() {
+        assert_eq!(split_schema_obj(""), ("public".to_string(), "".to_string()));
+    }
+
+    #[test]
+    fn column_info_default_flags() {
+        let col = ColumnInfo {
+            name: "id".to_string(),
+            data_type: "integer".to_string(),
+            nullable: false,
+            default: None,
+        };
+        assert_eq!(col.name, "id");
+        assert!(!col.nullable);
+        assert!(col.default.is_none());
+    }
 }
