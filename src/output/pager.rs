@@ -123,4 +123,57 @@ mod tests {
         assert_eq!(p.command, "more");
         assert!(!p.disabled);
     }
+
+    #[test]
+    fn disabled_pager_print_writes_directly() {
+        let p = Pager::disabled();
+        // Disabled pager must never attempt to spawn a subprocess.
+        let result = p.print("hello\nworld\n");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn disabled_pager_command_is_empty() {
+        let p = Pager::disabled();
+        assert_eq!(p.command, "");
+    }
+
+    #[test]
+    fn spawn_pager_with_unknown_command_errors() {
+        let p = Pager::with_command("pgcli-rs-definitely-not-a-real-binary-xyz");
+        let result = p.spawn_pager();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn print_falls_back_to_stdout_when_pager_missing_and_would_page() {
+        // Even if should_page() were true, an unspawnable pager command
+        // must fall back to stdout instead of propagating an error.
+        let p = Pager::with_command("pgcli-rs-definitely-not-a-real-binary-xyz");
+        let content = "line\n".repeat(1000);
+        let result = p.print(&content);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn should_page_empty_content() {
+        // An empty document never needs paging regardless of terminal size.
+        assert!(!should_page(""));
+    }
+
+    #[test]
+    fn spawn_pager_splits_command_into_program_and_args() {
+        // Use a command guaranteed to exist and exit immediately so this
+        // test doesn't hang or leave a process behind.
+        #[cfg(target_os = "windows")]
+        let p = Pager::with_command("cmd /C exit");
+        #[cfg(not(target_os = "windows"))]
+        let p = Pager::with_command("true");
+
+        let result = p.spawn_pager();
+        assert!(result.is_ok());
+        if let Ok(mut child) = result {
+            let _ = child.wait();
+        }
+    }
 }
