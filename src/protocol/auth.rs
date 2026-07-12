@@ -320,16 +320,14 @@ mod tests {
 
     #[test]
     fn scram_client_first_contains_nonce() {
-        // codeql[rust/hard-coded-cryptographic-value] test fixture, not a real credential
-        let mut client = ScramClient::new("alice", "hunter2");
+        let mut client = ScramClient::new("alice", "hunter2"); // codeql[rust/hard-coded-cryptographic-value]
         let msg = client.client_first_message();
         assert!(msg.starts_with("n,,n=alice,r="));
     }
 
     #[test]
     fn md5_password_format() {
-        // codeql[rust/hard-coded-cryptographic-value] test fixture, not a real credential
-        let hash = md5_password("hunter2", "alice", &[1, 2, 3, 4]);
+        let hash = md5_password("hunter2", "alice", &[1, 2, 3, 4]); // codeql[rust/hard-coded-cryptographic-value]
         assert!(hash.starts_with("md5"), "Expected md5 prefix, got: {hash}");
         assert_eq!(hash.len(), 35); // "md5" + 32 hex chars
     }
@@ -343,15 +341,13 @@ mod tests {
 
     #[test]
     fn pbkdf2_produces_32_bytes() {
-        // codeql[rust/hard-coded-cryptographic-value] test fixture, not a real credential
-        let key = pbkdf2_sha256(b"password", b"salt", 4096);
+        let key = pbkdf2_sha256(b"password", b"salt", 4096); // codeql[rust/hard-coded-cryptographic-value]
         assert_eq!(key.len(), 32);
     }
 
     #[test]
     fn scram_full_round_trip_produces_final_message() {
-        // codeql[rust/hard-coded-cryptographic-value] test fixture, not a real credential
-        let mut client = ScramClient::new("alice", "hunter2");
+        let mut client = ScramClient::new("alice", "hunter2"); // codeql[rust/hard-coded-cryptographic-value]
         let first = client.client_first_message();
         let client_nonce = first
             .strip_prefix("n,,n=alice,r=")
@@ -371,8 +367,7 @@ mod tests {
 
     #[test]
     fn scram_rejects_mismatched_server_nonce() {
-        // codeql[rust/hard-coded-cryptographic-value] test fixture, not a real credential
-        let mut client = ScramClient::new("alice", "hunter2");
+        let mut client = ScramClient::new("alice", "hunter2"); // codeql[rust/hard-coded-cryptographic-value]
         client.client_first_message();
         let salt_b64 = BASE64.encode(b"somesalt");
         let server_first = format!("r=totally-different-nonce,s={salt_b64},i=4096");
@@ -382,8 +377,7 @@ mod tests {
 
     #[test]
     fn scram_rejects_invalid_iteration_count() {
-        // codeql[rust/hard-coded-cryptographic-value] test fixture, not a real credential
-        let mut client = ScramClient::new("alice", "hunter2");
+        let mut client = ScramClient::new("alice", "hunter2"); // codeql[rust/hard-coded-cryptographic-value]
         let first = client.client_first_message();
         let client_nonce = first.strip_prefix("n,,n=alice,r=").unwrap();
         let salt_b64 = BASE64.encode(b"somesalt");
@@ -394,8 +388,7 @@ mod tests {
 
     #[test]
     fn scram_rejects_invalid_salt_encoding() {
-        // codeql[rust/hard-coded-cryptographic-value] test fixture, not a real credential
-        let mut client = ScramClient::new("alice", "hunter2");
+        let mut client = ScramClient::new("alice", "hunter2"); // codeql[rust/hard-coded-cryptographic-value]
         let first = client.client_first_message();
         let client_nonce = first.strip_prefix("n,,n=alice,r=").unwrap();
         let server_first = format!("r={client_nonce},s=not-valid-base64!!!,i=4096");
@@ -405,15 +398,13 @@ mod tests {
 
     #[test]
     fn scram_verify_server_final_accepts_v_prefix() {
-        // codeql[rust/hard-coded-cryptographic-value] test fixture, not a real credential
-        let client = ScramClient::new("alice", "hunter2");
+        let client = ScramClient::new("alice", "hunter2"); // codeql[rust/hard-coded-cryptographic-value]
         assert!(client.verify_server_final("v=c29tZXNpZ25hdHVyZQ==").is_ok());
     }
 
     #[test]
     fn scram_verify_server_final_rejects_error() {
-        // codeql[rust/hard-coded-cryptographic-value] test fixture, not a real credential
-        let client = ScramClient::new("alice", "hunter2");
+        let client = ScramClient::new("alice", "hunter2"); // codeql[rust/hard-coded-cryptographic-value]
         let result = client.verify_server_final("e=invalid-proof");
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("invalid-proof"));
@@ -421,18 +412,16 @@ mod tests {
 
     #[test]
     fn scram_verify_server_final_rejects_unexpected_format() {
-        // codeql[rust/hard-coded-cryptographic-value] test fixture, not a real credential
-        let client = ScramClient::new("alice", "hunter2");
+        let client = ScramClient::new("alice", "hunter2"); // codeql[rust/hard-coded-cryptographic-value]
         assert!(client.verify_server_final("garbage").is_err());
     }
 
     #[test]
     fn md5_password_is_deterministic() {
-        // codeql[rust/hard-coded-cryptographic-value] test fixtures, not real credentials
-        let a = md5_password("hunter2", "alice", &[1, 2, 3, 4]);
-        let b = md5_password("hunter2", "alice", &[1, 2, 3, 4]);
+        let a = md5_password("hunter2", "alice", &[1, 2, 3, 4]); // codeql[rust/hard-coded-cryptographic-value]
+        let b = md5_password("hunter2", "alice", &[1, 2, 3, 4]); // codeql[rust/hard-coded-cryptographic-value]
         assert_eq!(a, b);
-        let different_salt = md5_password("hunter2", "alice", &[5, 6, 7, 8]);
+        let different_salt = md5_password("hunter2", "alice", &[5, 6, 7, 8]); // codeql[rust/hard-coded-cryptographic-value]
         assert_ne!(a, different_salt);
     }
 
