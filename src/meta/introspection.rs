@@ -1019,7 +1019,10 @@ mod tests {
 
     #[test]
     fn rows_to_columns_maps_all_fields() {
-        let rows = vec![row_of(&["id", "integer", "NO", ""]), row_of(&["name", "text", "YES", "'x'"])];
+        let rows = vec![
+            row_of(&["id", "integer", "NO", ""]),
+            row_of(&["name", "text", "YES", "'x'"]),
+        ];
         let cols = rows_to_columns(&rows);
         assert_eq!(cols.len(), 2);
         assert_eq!(cols[0].name, "id");
@@ -1097,7 +1100,13 @@ mod tests {
 
     #[test]
     fn rows_to_locks_maps_all_fields() {
-        let rows = vec![row_of(&["123", "relation", "public.users", "AccessShareLock", "true"])];
+        let rows = vec![row_of(&[
+            "123",
+            "relation",
+            "public.users",
+            "AccessShareLock",
+            "true",
+        ])];
         let locks = rows_to_locks(&rows);
         assert_eq!(locks.len(), 1);
         assert_eq!(locks[0].pid, 123);
@@ -1109,7 +1118,13 @@ mod tests {
 
     #[test]
     fn rows_to_locks_empty_relation_becomes_none() {
-        let rows = vec![row_of(&["1", "transactionid", "", "ExclusiveLock", "false"])];
+        let rows = vec![row_of(&[
+            "1",
+            "transactionid",
+            "",
+            "ExclusiveLock",
+            "false",
+        ])];
         let locks = rows_to_locks(&rows);
         assert!(locks[0].relation.is_none());
         assert!(!locks[0].granted);
@@ -1150,7 +1165,11 @@ mod tests {
 
     #[test]
     fn format_indexes_section_lists_index_rows() {
-        let rows = vec![row_of(&["users_pkey", "PRIMARY KEY", "CREATE UNIQUE INDEX ..."])];
+        let rows = vec![row_of(&[
+            "users_pkey",
+            "PRIMARY KEY",
+            "CREATE UNIQUE INDEX ...",
+        ])];
         let out = format_indexes_section(&rows);
         assert!(out.starts_with("Indexes:\n"));
         assert!(out.contains("\"users_pkey\" PRIMARY KEY, CREATE UNIQUE INDEX ..."));
@@ -1173,7 +1192,10 @@ mod tests {
 
     #[test]
     fn format_fk_constraints_section_lists_constraints() {
-        let rows = vec![row_of(&["fk_org", "FOREIGN KEY (org_id) REFERENCES orgs(id)"])];
+        let rows = vec![row_of(&[
+            "fk_org",
+            "FOREIGN KEY (org_id) REFERENCES orgs(id)",
+        ])];
         let out = format_fk_constraints_section(&rows);
         assert!(out.starts_with("Foreign-key constraints:\n"));
         assert!(out.contains("fk_org"));
@@ -1188,7 +1210,11 @@ mod tests {
 
     #[test]
     fn format_referenced_by_section_lists_source_tables() {
-        let rows = vec![row_of(&["fk_x", "public.orders", "FOREIGN KEY (uid) REFERENCES users(id)"])];
+        let rows = vec![row_of(&[
+            "fk_x",
+            "public.orders",
+            "FOREIGN KEY (uid) REFERENCES users(id)",
+        ])];
         let out = format_referenced_by_section(&rows);
         assert!(out.starts_with("Referenced by:\n"));
         assert!(out.contains("TABLE \"public.orders\" CONSTRAINT \"fk_x\""));
@@ -1226,7 +1252,11 @@ mod tests {
 
     #[test]
     fn format_deps_output_lists_dependencies() {
-        let rows = vec![row_of(&["depends_on", "table public.orders", "table public.users"])];
+        let rows = vec![row_of(&[
+            "depends_on",
+            "table public.orders",
+            "table public.users",
+        ])];
         let out = format_deps_output("public.users", &rows);
         assert!(out.starts_with("Dependencies for \"public.users\":\n"));
         assert!(out.contains("[depends_on]  table public.orders  ->  table public.users"));
