@@ -1899,7 +1899,12 @@ mod tests {
     fn dispatch_reconnect_no_args() {
         assert_eq!(
             dispatch_ok(r"\reconnect"),
-            MetaResult::Reconnect { dbname: None, user: None, host: None, port: None }
+            MetaResult::Reconnect {
+                dbname: None,
+                user: None,
+                host: None,
+                port: None
+            }
         );
     }
 
@@ -1943,10 +1948,38 @@ mod tests {
     #[test]
     fn dispatch_listing_commands_return_query() {
         for cmd in [
-            r"\dt", r"\dv", r"\dm", r"\di", r"\ds", r"\df", r"\df+", r"\dn", r"\dn+", r"\dC",
-            r"\dy", r"\dY", r"\dT+", r"\dT", r"\dx", r"\dRs", r"\drs", r"\dRg", r"\drg", r"\dD",
-            r"\dd", r"\dO", r"\do", r"\dP", r"\dF", r"\dFp", r"\dFd", r"\dFt", r"\dp", r"\z",
-            r"\dconfig", r"\dc",
+            r"\dt",
+            r"\dv",
+            r"\dm",
+            r"\di",
+            r"\ds",
+            r"\df",
+            r"\df+",
+            r"\dn",
+            r"\dn+",
+            r"\dC",
+            r"\dy",
+            r"\dY",
+            r"\dT+",
+            r"\dT",
+            r"\dx",
+            r"\dRs",
+            r"\drs",
+            r"\dRg",
+            r"\drg",
+            r"\dD",
+            r"\dd",
+            r"\dO",
+            r"\do",
+            r"\dP",
+            r"\dF",
+            r"\dFp",
+            r"\dFd",
+            r"\dFt",
+            r"\dp",
+            r"\z",
+            r"\dconfig",
+            r"\dc",
         ] {
             assert!(
                 matches!(dispatch_ok(cmd), MetaResult::Query(_)),
@@ -2067,7 +2100,10 @@ mod tests {
     fn dispatch_gx_with_previous_query() {
         let mut d = MetaCommandDispatcher::new();
         d.last_sql = "SELECT 1".to_string();
-        assert_eq!(dispatch_with(&mut d, r"\gx").unwrap(), MetaResult::RepeatExpanded);
+        assert_eq!(
+            dispatch_with(&mut d, r"\gx").unwrap(),
+            MetaResult::RepeatExpanded
+        );
     }
 
     #[test]
@@ -2227,7 +2263,10 @@ mod tests {
     fn dispatch_o_sets_and_clears_output_file() {
         let mut d = MetaCommandDispatcher::new();
         dispatch_with(&mut d, r"\o out.txt").unwrap();
-        assert_eq!(d.output_file.as_deref(), Some(std::path::Path::new("out.txt")));
+        assert_eq!(
+            d.output_file.as_deref(),
+            Some(std::path::Path::new("out.txt"))
+        );
         dispatch_with(&mut d, r"\o").unwrap();
         assert!(d.output_file.is_none());
     }
@@ -2520,9 +2559,18 @@ mod tests {
 
     #[test]
     fn dispatch_transaction_control_commands() {
-        assert_eq!(dispatch_ok(r"\begin"), MetaResult::Query("BEGIN;".to_string()));
-        assert_eq!(dispatch_ok(r"\commit"), MetaResult::Query("COMMIT;".to_string()));
-        assert_eq!(dispatch_ok(r"\rollback"), MetaResult::Query("ROLLBACK;".to_string()));
+        assert_eq!(
+            dispatch_ok(r"\begin"),
+            MetaResult::Query("BEGIN;".to_string())
+        );
+        assert_eq!(
+            dispatch_ok(r"\commit"),
+            MetaResult::Query("COMMIT;".to_string())
+        );
+        assert_eq!(
+            dispatch_ok(r"\rollback"),
+            MetaResult::Query("ROLLBACK;".to_string())
+        );
     }
 
     #[test]
@@ -2584,7 +2632,10 @@ mod tests {
     #[test]
     fn dispatch_size_locks_activity_bloat_return_query() {
         for cmd in [r"\size", r"\locks", r"\activity"] {
-            assert!(matches!(dispatch_ok(cmd), MetaResult::Query(_)), "expected Query for {cmd}");
+            assert!(
+                matches!(dispatch_ok(cmd), MetaResult::Query(_)),
+                "expected Query for {cmd}"
+            );
         }
         assert_eq!(dispatch_ok(r"\bloat"), MetaResult::ShowBloat);
     }
@@ -2740,7 +2791,11 @@ mod tests {
     #[test]
     fn dispatch_crosstabview_parses_columns() {
         match dispatch_ok(r"\crosstabview h v d") {
-            MetaResult::CrossTabView { col_h, col_v, col_d } => {
+            MetaResult::CrossTabView {
+                col_h,
+                col_v,
+                col_d,
+            } => {
                 assert_eq!(col_h, "h");
                 assert_eq!(col_v, "v");
                 assert_eq!(col_d, "d");
@@ -2860,7 +2915,8 @@ mod tests {
     #[test]
     fn dispatch_run_known_bookmark_returns_query() {
         let mut d = MetaCommandDispatcher::new();
-        d.bookmarks.insert("q1".to_string(), "SELECT 42".to_string());
+        d.bookmarks
+            .insert("q1".to_string(), "SELECT 42".to_string());
         match dispatch_with(&mut d, r"\run q1").unwrap() {
             MetaResult::Query(sql) => assert_eq!(sql, "SELECT 42"),
             other => panic!("expected Query, got {other:?}"),
