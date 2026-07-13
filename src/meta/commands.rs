@@ -1881,4 +1881,1227 @@ mod tests {
         let cmd = MetaCommand::parse(r"\dA").unwrap();
         assert!(matches!(d.dispatch(&cmd).unwrap(), MetaResult::Query(_)));
     }
+
+    fn dispatch_ok(line: &str) -> MetaResult {
+        let mut d = MetaCommandDispatcher::new();
+        let cmd = MetaCommand::parse(line).unwrap();
+        d.dispatch(&cmd).unwrap()
+    }
+
+    fn dispatch_with(d: &mut MetaCommandDispatcher, line: &str) -> Result<MetaResult> {
+        let cmd = MetaCommand::parse(line).unwrap();
+        d.dispatch(&cmd)
+    }
+
+    // -- Connection / info ----------------------------------------------------
+
+    #[test]
+    fn dispatch_reconnect_no_args() {
+        assert_eq!(
+            dispatch_ok(r"\reconnect"),
+            MetaResult::Reconnect {
+                dbname: None,
+                user: None,
+                host: None,
+                port: None
+            }
+        );
+    }
+
+    #[test]
+    fn dispatch_conninfo_returns_query() {
+        assert!(matches!(dispatch_ok(r"\conninfo"), MetaResult::Query(_)));
+    }
+
+    #[test]
+    fn dispatch_password_hint() {
+        match dispatch_ok(r"\password alice") {
+            MetaResult::Output(s) => assert!(s.contains("alice")),
+            other => panic!("expected Output, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_l_plus_returns_query() {
+        assert!(matches!(dispatch_ok(r"\l+"), MetaResult::Query(_)));
+    }
+
+    // -- Object listing / describe ---------------------------------------------
+
+    #[test]
+    fn dispatch_d_plus_requires_name() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\d+").is_err());
+    }
+
+    #[test]
+    fn dispatch_d_plus_returns_extended_introspect() {
+        match dispatch_ok(r"\d+ orders") {
+            MetaResult::IntrospectTableExtended { schema, name } => {
+                assert_eq!(schema, "public");
+                assert_eq!(name, "orders");
+            }
+            other => panic!("expected IntrospectTableExtended, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_listing_commands_return_query() {
+        for cmd in [
+            r"\dt",
+            r"\dv",
+            r"\dm",
+            r"\di",
+            r"\ds",
+            r"\df",
+            r"\df+",
+            r"\dn",
+            r"\dn+",
+            r"\dC",
+            r"\dy",
+            r"\dY",
+            r"\dT+",
+            r"\dT",
+            r"\dx",
+            r"\dRs",
+            r"\drs",
+            r"\dRg",
+            r"\drg",
+            r"\dD",
+            r"\dd",
+            r"\dO",
+            r"\do",
+            r"\dP",
+            r"\dF",
+            r"\dFp",
+            r"\dFd",
+            r"\dFt",
+            r"\dp",
+            r"\z",
+            r"\dconfig",
+            r"\dc",
+        ] {
+            assert!(
+                matches!(dispatch_ok(cmd), MetaResult::Query(_)),
+                "expected Query for {cmd}"
+            );
+        }
+    }
+
+    #[test]
+    fn dispatch_dconfig_with_pattern_includes_filter() {
+        match dispatch_ok(r"\dconfig work_mem") {
+            MetaResult::Query(sql) => assert!(sql.contains("work_mem")),
+            other => panic!("expected Query, got {other:?}"),
+        }
+    }
+
+    // -- Source viewers ---------------------------------------------------------
+
+    #[test]
+    fn dispatch_sf_requires_name() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\sf").is_err());
+    }
+
+    #[test]
+    fn dispatch_sf_returns_function_source() {
+        match dispatch_ok(r"\sf myschema.myfunc") {
+            MetaResult::ShowFunctionSource { schema, name } => {
+                assert_eq!(schema, "myschema");
+                assert_eq!(name, "myfunc");
+            }
+            other => panic!("expected ShowFunctionSource, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_sv_requires_name() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\sv").is_err());
+    }
+
+    #[test]
+    fn dispatch_sv_returns_view_definition() {
+        match dispatch_ok(r"\sv myview") {
+            MetaResult::ShowViewDefinition { schema, name } => {
+                assert_eq!(schema, "public");
+                assert_eq!(name, "myview");
+            }
+            other => panic!("expected ShowViewDefinition, got {other:?}"),
+        }
+    }
+
+    // -- Encoding / roles ---------------------------------------------------------
+
+    #[test]
+    fn dispatch_encoding_no_arg_shows_current() {
+        match dispatch_ok(r"\encoding") {
+            MetaResult::Query(sql) => assert!(sql.contains("SHOW client_encoding")),
+            other => panic!("expected Query, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_encoding_with_arg_sets_it() {
+        match dispatch_ok(r"\encoding UTF8") {
+            MetaResult::Query(sql) => {
+                assert!(sql.contains("SET client_encoding TO 'UTF8'"));
+            }
+            other => panic!("expected Query, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_du_returns_list_roles() {
+        match dispatch_ok(r"\du") {
+            MetaResult::ListRoles { pattern } => assert_eq!(pattern, ""),
+            other => panic!("expected ListRoles, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_dg_alias_returns_list_roles() {
+        match dispatch_ok(r"\dg admin") {
+            MetaResult::ListRoles { pattern } => assert_eq!(pattern, "admin"),
+            other => panic!("expected ListRoles, got {other:?}"),
+        }
+    }
+
+    // -- g / gx / gexec ------------------------------------------------------------
+
+    #[test]
+    fn dispatch_g_no_previous_query() {
+        match dispatch_ok(r"\g") {
+            MetaResult::Output(s) => assert!(s.contains("no previous query")),
+            other => panic!("expected Output, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_g_with_previous_query_repeats() {
+        let mut d = MetaCommandDispatcher::new();
+        d.last_sql = "SELECT 1".to_string();
+        match dispatch_with(&mut d, r"\g out.txt").unwrap() {
+            MetaResult::Repeat { to_file } => assert_eq!(to_file.as_deref(), Some("out.txt")),
+            other => panic!("expected Repeat, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_gx_no_previous_query() {
+        match dispatch_ok(r"\gx") {
+            MetaResult::Output(s) => assert!(s.contains("no previous query")),
+            other => panic!("expected Output, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_gx_with_previous_query() {
+        let mut d = MetaCommandDispatcher::new();
+        d.last_sql = "SELECT 1".to_string();
+        assert_eq!(
+            dispatch_with(&mut d, r"\gx").unwrap(),
+            MetaResult::RepeatExpanded
+        );
+    }
+
+    #[test]
+    fn dispatch_gexec_without_previous_query_errors() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\gexec").is_err());
+    }
+
+    #[test]
+    fn dispatch_gexec_with_previous_query() {
+        let mut d = MetaCommandDispatcher::new();
+        d.last_sql = "SELECT 1".to_string();
+        assert_eq!(dispatch_with(&mut d, r"\gexec").unwrap(), MetaResult::GExec);
+    }
+
+    // -- copy / large objects --------------------------------------------------------
+
+    #[test]
+    fn dispatch_copy_requires_args() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\copy").is_err());
+    }
+
+    #[test]
+    fn dispatch_copy_returns_client_copy() {
+        match dispatch_ok(r"\copy mytable TO 'f.csv'") {
+            MetaResult::ClientCopy(s) => assert!(s.contains("mytable")),
+            other => panic!("expected ClientCopy, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_lo_list_returns_query_extra() {
+        assert!(matches!(dispatch_ok(r"\lo_list+"), MetaResult::Query(_)));
+    }
+
+    #[test]
+    fn dispatch_lo_import_requires_path() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\lo_import").is_err());
+    }
+
+    #[test]
+    fn dispatch_lo_import_returns_path() {
+        match dispatch_ok(r"\lo_import /tmp/file.dat") {
+            MetaResult::LoImport(p) => assert_eq!(p, "/tmp/file.dat"),
+            other => panic!("expected LoImport, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_lo_export_requires_two_args() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\lo_export 123").is_err());
+    }
+
+    #[test]
+    fn dispatch_lo_export_invalid_oid_errors() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\lo_export notanumber /tmp/out.dat").is_err());
+    }
+
+    #[test]
+    fn dispatch_lo_export_returns_oid_and_path() {
+        match dispatch_ok(r"\lo_export 42 /tmp/out.dat") {
+            MetaResult::LoExport { oid, path } => {
+                assert_eq!(oid, 42);
+                assert_eq!(path, "/tmp/out.dat");
+            }
+            other => panic!("expected LoExport, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_lo_unlink_invalid_oid_errors() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\lo_unlink abc").is_err());
+    }
+
+    #[test]
+    fn dispatch_lo_unlink_returns_query() {
+        match dispatch_ok(r"\lo_unlink 7") {
+            MetaResult::Query(sql) => assert!(sql.contains("lo_unlink(7)")),
+            other => panic!("expected Query, got {other:?}"),
+        }
+    }
+
+    // -- Query buffer / output settings -----------------------------------------------
+
+    #[test]
+    fn dispatch_r_resets_buffer() {
+        let mut d = MetaCommandDispatcher::new();
+        d.last_sql = "SELECT 1".to_string();
+        dispatch_with(&mut d, r"\r").unwrap();
+        assert!(d.last_sql.is_empty());
+    }
+
+    #[test]
+    fn dispatch_a_returns_hint() {
+        assert!(matches!(dispatch_ok(r"\a"), MetaResult::Output(_)));
+    }
+
+    #[test]
+    fn dispatch_x_explicit_on_off_auto() {
+        let mut d = MetaCommandDispatcher::new();
+        dispatch_with(&mut d, r"\x on").unwrap();
+        assert!(d.expanded);
+        dispatch_with(&mut d, r"\x auto").unwrap();
+        assert!(!d.expanded && d.expanded_auto);
+        dispatch_with(&mut d, r"\x off").unwrap();
+        assert!(!d.expanded && !d.expanded_auto);
+    }
+
+    #[test]
+    fn dispatch_timing_on_off_toggle() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(d.timing);
+        dispatch_with(&mut d, r"\timing off").unwrap();
+        assert!(!d.timing);
+        dispatch_with(&mut d, r"\timing on").unwrap();
+        assert!(d.timing);
+        dispatch_with(&mut d, r"\timing").unwrap();
+        assert!(!d.timing);
+    }
+
+    #[test]
+    fn dispatch_t_returns_hint() {
+        assert!(matches!(dispatch_ok(r"\t"), MetaResult::Output(_)));
+    }
+
+    #[test]
+    fn dispatch_format_sets_print_option() {
+        match dispatch_ok(r"\format csv") {
+            MetaResult::SetPrintOption { key, value } => {
+                assert_eq!(key, "format");
+                assert_eq!(value.as_deref(), Some("csv"));
+            }
+            other => panic!("expected SetPrintOption, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_theme_unknown_errors() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\theme neon").is_err());
+    }
+
+    #[test]
+    fn dispatch_theme_no_arg_shows_current() {
+        match dispatch_ok(r"\theme") {
+            MetaResult::Output(s) => assert!(s.contains("dark")),
+            other => panic!("expected Output, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_o_sets_and_clears_output_file() {
+        let mut d = MetaCommandDispatcher::new();
+        dispatch_with(&mut d, r"\o out.txt").unwrap();
+        assert_eq!(
+            d.output_file.as_deref(),
+            Some(std::path::Path::new("out.txt"))
+        );
+        dispatch_with(&mut d, r"\o").unwrap();
+        assert!(d.output_file.is_none());
+    }
+
+    #[test]
+    fn dispatch_pset_no_key_shows_help() {
+        match dispatch_ok(r"\pset") {
+            MetaResult::Output(s) => assert!(s.contains("border")),
+            other => panic!("expected Output, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_pset_with_key_and_value() {
+        match dispatch_ok(r"\pset border 2") {
+            MetaResult::SetPrintOption { key, value } => {
+                assert_eq!(key, "border");
+                assert_eq!(value.as_deref(), Some("2"));
+            }
+            other => panic!("expected SetPrintOption, got {other:?}"),
+        }
+    }
+
+    // -- Variables ----------------------------------------------------------------
+
+    #[test]
+    fn dispatch_set_no_args_lists_variables() {
+        let mut d = MetaCommandDispatcher::new();
+        match dispatch_with(&mut d, r"\set").unwrap() {
+            MetaResult::Output(s) => assert!(s.contains("No variables set")),
+            other => panic!("expected Output, got {other:?}"),
+        }
+        d.variables.insert("x".to_string(), "1".to_string());
+        match dispatch_with(&mut d, r"\set").unwrap() {
+            MetaResult::Output(s) => assert!(s.contains("x = '1'")),
+            other => panic!("expected Output, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_set_prompt1_routes_to_print_option() {
+        match dispatch_ok(r"\set PROMPT1 mynew>") {
+            MetaResult::SetPrintOption { key, value } => {
+                assert_eq!(key, "prompt1");
+                assert_eq!(value.as_deref(), Some("mynew>"));
+            }
+            other => panic!("expected SetPrintOption, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_set_prompt2_routes_to_print_option() {
+        match dispatch_ok(r"\set PROMPT2 cont>") {
+            MetaResult::SetPrintOption { key, .. } => assert_eq!(key, "prompt2"),
+            other => panic!("expected SetPrintOption, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_unset_removes_variable() {
+        let mut d = MetaCommandDispatcher::new();
+        d.variables.insert("foo".to_string(), "bar".to_string());
+        dispatch_with(&mut d, r"\unset foo").unwrap();
+        assert!(!d.variables.contains_key("foo"));
+    }
+
+    // -- Text output ----------------------------------------------------------------
+
+    #[test]
+    fn dispatch_echo_with_n_suppresses_newline() {
+        match dispatch_ok(r"\echo -n hello") {
+            MetaResult::OutputNoNl(s) => assert_eq!(s, "hello"),
+            other => panic!("expected OutputNoNl, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_qecho_substitutes_vars() {
+        let mut d = MetaCommandDispatcher::new();
+        d.variables.insert("x".to_string(), "42".to_string());
+        match dispatch_with(&mut d, r"\qecho value=:x").unwrap() {
+            MetaResult::Output(s) => assert_eq!(s, "value=42"),
+            other => panic!("expected Output, got {other:?}"),
+        }
+    }
+
+    // -- Script execution -------------------------------------------------------------
+
+    #[test]
+    fn dispatch_i_requires_path() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\i").is_err());
+    }
+
+    #[test]
+    fn dispatch_i_returns_execute_file() {
+        match dispatch_ok(r#"\i "script.sql""#) {
+            MetaResult::ExecuteFile(p) => assert_eq!(p.to_str().unwrap(), "script.sql"),
+            other => panic!("expected ExecuteFile, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_i_plus_requires_path() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\i+").is_err());
+    }
+
+    #[test]
+    fn dispatch_ir_requires_path() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\ir").is_err());
+    }
+
+    #[test]
+    fn dispatch_ir_returns_execute_file() {
+        match dispatch_ok(r"\ir rel.sql") {
+            MetaResult::ExecuteFile(p) => assert_eq!(p.to_str().unwrap(), "rel.sql"),
+            other => panic!("expected ExecuteFile, got {other:?}"),
+        }
+    }
+
+    // -- Shell -----------------------------------------------------------------------
+
+    #[test]
+    fn dispatch_bang_no_args_shows_usage() {
+        match dispatch_ok(r"\!") {
+            MetaResult::Output(s) => assert!(s.contains("Usage")),
+            other => panic!("expected Output, got {other:?}"),
+        }
+    }
+
+    // -- Introspection extensions ------------------------------------------------------
+
+    #[test]
+    fn dispatch_introspect_requires_name() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\introspect").is_err());
+    }
+
+    #[test]
+    fn dispatch_introspect_returns_table() {
+        match dispatch_ok(r"\introspect sales.orders") {
+            MetaResult::IntrospectTable { schema, name } => {
+                assert_eq!(schema, "sales");
+                assert_eq!(name, "orders");
+            }
+            other => panic!("expected IntrospectTable, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_ddl_requires_name() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\ddl").is_err());
+    }
+
+    #[test]
+    fn dispatch_ddl_returns_ddl_table() {
+        match dispatch_ok(r"\ddl orders") {
+            MetaResult::DdlTable { schema, name } => {
+                assert_eq!(schema, "public");
+                assert_eq!(name, "orders");
+            }
+            other => panic!("expected DdlTable, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_explain_no_args_no_last_sql_errors() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\explain").is_err());
+    }
+
+    #[test]
+    fn dispatch_explain_uses_last_sql_when_no_args() {
+        let mut d = MetaCommandDispatcher::new();
+        d.last_sql = "SELECT 1".to_string();
+        match dispatch_with(&mut d, r"\explain").unwrap() {
+            MetaResult::Query(sql) => assert!(sql.contains("SELECT 1")),
+            other => panic!("expected Query, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_explain_with_args_uses_them() {
+        match dispatch_ok(r"\explain SELECT 2") {
+            MetaResult::Query(sql) => assert!(sql.contains("SELECT 2")),
+            other => panic!("expected Query, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_watch_without_last_sql_errors() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\watch").is_err());
+    }
+
+    #[test]
+    fn dispatch_watch_with_last_sql() {
+        let mut d = MetaCommandDispatcher::new();
+        d.last_sql = "SELECT 1".to_string();
+        match dispatch_with(&mut d, r"\watch 5").unwrap() {
+            MetaResult::Watch { interval_secs } => assert_eq!(interval_secs, 5),
+            other => panic!("expected Watch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_watch_diff_variant() {
+        let mut d = MetaCommandDispatcher::new();
+        d.last_sql = "SELECT 1".to_string();
+        match dispatch_with(&mut d, r"\watch diff 3").unwrap() {
+            MetaResult::WatchDiff { interval_secs } => assert_eq!(interval_secs, 3),
+            other => panic!("expected WatchDiff, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_vacuum_empty_and_target() {
+        match dispatch_ok(r"\vacuum") {
+            MetaResult::Query(sql) => assert_eq!(sql, "VACUUM ANALYZE;"),
+            other => panic!("expected Query, got {other:?}"),
+        }
+        match dispatch_ok(r"\vacuum mytable") {
+            MetaResult::Query(sql) => assert!(sql.contains("mytable")),
+            other => panic!("expected Query, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_vacuum_rejects_semicolon_injection() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\vacuum t; DROP TABLE x").is_err());
+    }
+
+    #[test]
+    fn dispatch_analyze_empty_and_target() {
+        match dispatch_ok(r"\analyze") {
+            MetaResult::Query(sql) => assert_eq!(sql, "ANALYZE;"),
+            other => panic!("expected Query, got {other:?}"),
+        }
+        match dispatch_ok(r"\analyze mytable") {
+            MetaResult::Query(sql) => assert!(sql.contains("mytable")),
+            other => panic!("expected Query, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_analyze_rejects_semicolon_injection() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\analyze t; DROP TABLE x").is_err());
+    }
+
+    // -- Write / row count --------------------------------------------------------------
+
+    #[test]
+    fn dispatch_write_requires_path() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\write").is_err());
+    }
+
+    #[test]
+    fn dispatch_write_returns_path() {
+        match dispatch_ok(r"\write out.csv") {
+            MetaResult::WriteResult(p) => assert_eq!(p, "out.csv"),
+            other => panic!("expected WriteResult, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_rows_no_previous_query() {
+        match dispatch_ok(r"\rows") {
+            MetaResult::Output(s) => assert!(s.contains("no previous query")),
+            other => panic!("expected Output, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_rows_wraps_last_sql() {
+        let mut d = MetaCommandDispatcher::new();
+        d.last_sql = "SELECT * FROM t".to_string();
+        match dispatch_with(&mut d, r"\rows").unwrap() {
+            MetaResult::Query(sql) => assert!(sql.contains("COUNT(*)")),
+            other => panic!("expected Query, got {other:?}"),
+        }
+    }
+
+    // -- Transactions ------------------------------------------------------------------
+
+    #[test]
+    fn dispatch_transaction_control_commands() {
+        assert_eq!(
+            dispatch_ok(r"\begin"),
+            MetaResult::Query("BEGIN;".to_string())
+        );
+        assert_eq!(
+            dispatch_ok(r"\commit"),
+            MetaResult::Query("COMMIT;".to_string())
+        );
+        assert_eq!(
+            dispatch_ok(r"\rollback"),
+            MetaResult::Query("ROLLBACK;".to_string())
+        );
+    }
+
+    #[test]
+    fn dispatch_rollback_to_savepoint() {
+        match dispatch_ok(r"\rollback sp1") {
+            MetaResult::Query(sql) => assert!(sql.contains("ROLLBACK TO SAVEPOINT sp1")),
+            other => panic!("expected Query, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_rollback_rejects_semicolon() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\rollback sp1; DROP TABLE x").is_err());
+    }
+
+    #[test]
+    fn dispatch_savepoint_requires_name() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\savepoint").is_err());
+    }
+
+    #[test]
+    fn dispatch_savepoint_rejects_semicolon() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\savepoint sp; DROP TABLE x").is_err());
+    }
+
+    #[test]
+    fn dispatch_savepoint_returns_query() {
+        match dispatch_ok(r"\savepoint sp1") {
+            MetaResult::Query(sql) => assert!(sql.contains("SAVEPOINT sp1")),
+            other => panic!("expected Query, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_release_requires_name() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\release").is_err());
+    }
+
+    #[test]
+    fn dispatch_release_rejects_semicolon() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\release sp; DROP TABLE x").is_err());
+    }
+
+    #[test]
+    fn dispatch_release_returns_query() {
+        match dispatch_ok(r"\release sp1") {
+            MetaResult::Query(sql) => assert!(sql.contains("RELEASE SAVEPOINT sp1")),
+            other => panic!("expected Query, got {other:?}"),
+        }
+    }
+
+    // -- pgcli-rs analytics extensions --------------------------------------------------
+
+    #[test]
+    fn dispatch_size_locks_activity_bloat_return_query() {
+        for cmd in [r"\size", r"\locks", r"\activity"] {
+            assert!(
+                matches!(dispatch_ok(cmd), MetaResult::Query(_)),
+                "expected Query for {cmd}"
+            );
+        }
+        assert_eq!(dispatch_ok(r"\bloat"), MetaResult::ShowBloat);
+    }
+
+    #[test]
+    fn dispatch_deps_returns_show_deps() {
+        match dispatch_ok(r"\deps public.users") {
+            MetaResult::ShowDeps { name } => assert_eq!(name, "public.users"),
+            other => panic!("expected ShowDeps, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_indexes_returns_show_indexes() {
+        match dispatch_ok(r"\indexes mytable") {
+            MetaResult::ShowIndexes { name } => assert_eq!(name, "mytable"),
+            other => panic!("expected ShowIndexes, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_stats_returns_column_stats() {
+        match dispatch_ok(r"\stats sales.orders") {
+            MetaResult::ShowColumnStats { schema, name } => {
+                assert_eq!(schema, "sales");
+                assert_eq!(name, "orders");
+            }
+            other => panic!("expected ShowColumnStats, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_partitions_returns_show_partitions() {
+        match dispatch_ok(r"\partitions sales.orders") {
+            MetaResult::ShowPartitions { schema, name } => {
+                assert_eq!(schema, "sales");
+                assert_eq!(name, "orders");
+            }
+            other => panic!("expected ShowPartitions, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_sequences_returns_list_sequences() {
+        match dispatch_ok(r"\sequences seq*") {
+            MetaResult::ListSequences { pattern } => assert_eq!(pattern, "seq*"),
+            other => panic!("expected ListSequences, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_kill_requires_valid_pid() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\kill notapid").is_err());
+    }
+
+    #[test]
+    fn dispatch_kill_parses_pid_and_force() {
+        match dispatch_ok(r"\kill 1234 force") {
+            MetaResult::KillBackend { pid, force } => {
+                assert_eq!(pid, 1234);
+                assert!(force);
+            }
+            other => panic!("expected KillBackend, got {other:?}"),
+        }
+        match dispatch_ok(r"\kill 1234") {
+            MetaResult::KillBackend { pid, force } => {
+                assert_eq!(pid, 1234);
+                assert!(!force);
+            }
+            other => panic!("expected KillBackend, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_dl_returns_list_languages() {
+        match dispatch_ok(r"\dL lang*") {
+            MetaResult::ListLanguages { pattern } => assert_eq!(pattern, "lang*"),
+            other => panic!("expected ListLanguages, got {other:?}"),
+        }
+    }
+
+    // -- Error control / UX ----------------------------------------------------------
+
+    #[test]
+    fn dispatch_warn_substitutes_vars() {
+        let mut d = MetaCommandDispatcher::new();
+        d.variables.insert("x".to_string(), "1".to_string());
+        match dispatch_with(&mut d, r"\warn value=:x").unwrap() {
+            MetaResult::Warn(s) => assert_eq!(s, "value=1"),
+            other => panic!("expected Warn, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_on_error_rejects_invalid_mode() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\on_error bogus").is_err());
+    }
+
+    #[test]
+    fn dispatch_on_error_accepts_valid_modes() {
+        for mode in ["stop", "continue", "rollback"] {
+            match dispatch_ok(&format!(r"\on_error {mode}")) {
+                MetaResult::SetOnError(m) => assert_eq!(m, mode),
+                other => panic!("expected SetOnError, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn dispatch_prompt_var_only() {
+        match dispatch_ok(r"\prompt myvar") {
+            MetaResult::Prompt { text, var } => {
+                assert!(text.is_empty());
+                assert_eq!(var, "myvar");
+            }
+            other => panic!("expected Prompt, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_prompt_text_and_var() {
+        // The parser splits on the first whitespace, so quoted text can only
+        // be a single token here; multi-word prompts are a separate concern.
+        match dispatch_ok(r"\prompt 'EnterName' myvar") {
+            MetaResult::Prompt { text, var } => {
+                assert_eq!(text, "EnterName");
+                assert_eq!(var, "myvar");
+            }
+            other => panic!("expected Prompt, got {other:?}"),
+        }
+    }
+
+    // -- gset / crosstabview / gdesc / bench ---------------------------------------------
+
+    #[test]
+    fn dispatch_gset_without_previous_query_errors() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\gset").is_err());
+    }
+
+    #[test]
+    fn dispatch_gset_with_previous_query() {
+        let mut d = MetaCommandDispatcher::new();
+        d.last_sql = "SELECT 1".to_string();
+        match dispatch_with(&mut d, r"\gset pfx_").unwrap() {
+            MetaResult::GSet { prefix } => assert_eq!(prefix, "pfx_"),
+            other => panic!("expected GSet, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_crosstabview_parses_columns() {
+        match dispatch_ok(r"\crosstabview h v d") {
+            MetaResult::CrossTabView {
+                col_h,
+                col_v,
+                col_d,
+            } => {
+                assert_eq!(col_h, "h");
+                assert_eq!(col_v, "v");
+                assert_eq!(col_d, "d");
+            }
+            other => panic!("expected CrossTabView, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_gdesc_without_previous_query_errors() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\gdesc").is_err());
+    }
+
+    #[test]
+    fn dispatch_gdesc_with_previous_query() {
+        let mut d = MetaCommandDispatcher::new();
+        d.last_sql = "SELECT 1".to_string();
+        assert_eq!(dispatch_with(&mut d, r"\gdesc").unwrap(), MetaResult::GDesc);
+    }
+
+    #[test]
+    fn dispatch_bench_without_previous_query_errors() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\bench").is_err());
+    }
+
+    #[test]
+    fn dispatch_bench_zero_count_errors() {
+        let mut d = MetaCommandDispatcher::new();
+        d.last_sql = "SELECT 1".to_string();
+        assert!(dispatch_with(&mut d, r"\bench 0").is_err());
+    }
+
+    #[test]
+    fn dispatch_bench_over_max_errors() {
+        let mut d = MetaCommandDispatcher::new();
+        d.last_sql = "SELECT 1".to_string();
+        assert!(dispatch_with(&mut d, r"\bench 10001").is_err());
+    }
+
+    #[test]
+    fn dispatch_bench_valid_count() {
+        let mut d = MetaCommandDispatcher::new();
+        d.last_sql = "SELECT 1".to_string();
+        match dispatch_with(&mut d, r"\bench 50").unwrap() {
+            MetaResult::Bench { count } => assert_eq!(count, 50),
+            other => panic!("expected Bench, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_bench_default_count() {
+        let mut d = MetaCommandDispatcher::new();
+        d.last_sql = "SELECT 1".to_string();
+        match dispatch_with(&mut d, r"\bench").unwrap() {
+            MetaResult::Bench { count } => assert_eq!(count, 10),
+            other => panic!("expected Bench, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_e_opens_editor() {
+        assert_eq!(dispatch_ok(r"\e"), MetaResult::EditAndExecute);
+    }
+
+    // -- History ------------------------------------------------------------------------
+
+    #[test]
+    fn dispatch_hist_default_count_parses() {
+        // With no ~/.pgcli_history file (typical in CI), reports no history found.
+        // We don't assert on the exact branch since a developer machine may have one;
+        // we only assert the command dispatches without error.
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\hist").is_ok());
+        assert!(dispatch_with(&mut d, r"\history 5").is_ok());
+    }
+
+    // -- Bookmarks (read-only paths; avoid writing to the real bookmarks file) ----------
+
+    #[test]
+    fn dispatch_bookmark_requires_name() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\bookmark").is_err());
+    }
+
+    #[test]
+    fn dispatch_bookmark_requires_previous_query() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\bookmark myquery").is_err());
+    }
+
+    #[test]
+    fn dispatch_bookmarks_lists_in_memory_bookmarks() {
+        let mut d = MetaCommandDispatcher::new();
+        d.bookmarks.clear();
+        d.bookmarks.insert("q1".to_string(), "SELECT 1".to_string());
+        match dispatch_with(&mut d, r"\bookmarks").unwrap() {
+            MetaResult::Output(s) => assert!(s.contains("q1")),
+            other => panic!("expected Output, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_run_requires_name() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\run").is_err());
+    }
+
+    #[test]
+    fn dispatch_run_unknown_bookmark_errors() {
+        let mut d = MetaCommandDispatcher::new();
+        d.bookmarks.clear();
+        assert!(dispatch_with(&mut d, r"\run nope").is_err());
+    }
+
+    #[test]
+    fn dispatch_run_known_bookmark_returns_query() {
+        let mut d = MetaCommandDispatcher::new();
+        d.bookmarks
+            .insert("q1".to_string(), "SELECT 42".to_string());
+        match dispatch_with(&mut d, r"\run q1").unwrap() {
+            MetaResult::Query(sql) => assert_eq!(sql, "SELECT 42"),
+            other => panic!("expected Query, got {other:?}"),
+        }
+        assert_eq!(d.last_sql, "SELECT 42");
+    }
+
+    #[test]
+    fn dispatch_delbookmark_requires_name() {
+        let mut d = MetaCommandDispatcher::new();
+        assert!(dispatch_with(&mut d, r"\delbookmark").is_err());
+    }
+
+    #[test]
+    fn dispatch_delbookmark_unknown_reports_not_found() {
+        let mut d = MetaCommandDispatcher::new();
+        d.bookmarks.clear();
+        match dispatch_with(&mut d, r"\delbookmark nope").unwrap() {
+            MetaResult::Output(s) => assert!(s.contains("No bookmark")),
+            other => panic!("expected Output, got {other:?}"),
+        }
+    }
+
+    // -- Help -----------------------------------------------------------------------
+
+    #[test]
+    fn dispatch_help_returns_output() {
+        match dispatch_ok(r"\?") {
+            MetaResult::Output(s) => assert!(s.contains("General")),
+            other => panic!("expected Output, got {other:?}"),
+        }
+        assert!(matches!(dispatch_ok(r"\help"), MetaResult::Output(_)));
+    }
+
+    #[test]
+    fn dispatch_h_with_and_without_command() {
+        match dispatch_ok(r"\h SELECT") {
+            MetaResult::Output(s) => assert!(s.contains("select")),
+            other => panic!("expected Output, got {other:?}"),
+        }
+        assert!(matches!(dispatch_ok(r"\h"), MetaResult::Output(_)));
+    }
+
+    // -- Pure query-builder helpers (direct unit tests) ----------------------------------
+
+    #[test]
+    fn pattern_filter_none_is_empty() {
+        assert_eq!(pattern_filter(None, "col"), "");
+    }
+
+    #[test]
+    fn pattern_filter_wildcards_translated() {
+        let f = pattern_filter(Some("a*b?"), "col");
+        assert!(f.contains("col ILIKE '%a%b_%'"));
+    }
+
+    #[test]
+    fn schema_pattern_filter_with_schema_and_name() {
+        let f = schema_pattern_filter(Some("sch.tbl*"), "n.nspname", "c.relname");
+        assert!(f.contains("n.nspname ILIKE 'sch'"));
+        assert!(f.contains("c.relname ILIKE 'tbl%'"));
+    }
+
+    #[test]
+    fn schema_pattern_filter_name_only() {
+        let f = schema_pattern_filter(Some("tbl*"), "n.nspname", "c.relname");
+        assert!(!f.contains("n.nspname"));
+        assert!(f.contains("c.relname ILIKE 'tbl%'"));
+    }
+
+    #[test]
+    fn schema_pattern_filter_none_is_empty() {
+        assert_eq!(schema_pattern_filter(None, "s", "n"), "");
+        assert_eq!(schema_pattern_filter(Some(""), "s", "n"), "");
+    }
+
+    #[test]
+    fn size_query_with_and_without_table() {
+        assert!(size_query(Some("mytable")).contains("mytable"));
+        assert!(size_query(None).contains("current_database()"));
+    }
+
+    #[test]
+    fn locks_query_and_activity_query_are_well_formed() {
+        assert!(locks_query().contains("pg_locks"));
+        assert!(activity_query().contains("pg_stat_activity"));
+    }
+
+    #[test]
+    fn conninfo_query_selects_expected_columns() {
+        assert!(conninfo_query().contains("current_database()"));
+    }
+
+    #[test]
+    fn describe_query_filters_by_pattern() {
+        let sql = describe_query(Some("us*"));
+        assert!(sql.contains("c.relname ILIKE '%us%%'") || sql.contains("ILIKE"));
+    }
+
+    #[test]
+    fn list_tables_views_matviews_queries_contain_relkind() {
+        assert!(list_tables_query(None).contains("c.relkind = 'r'"));
+        assert!(list_views_query(None).contains("c.relkind = 'v'"));
+        assert!(list_matviews_query(None).contains("c.relkind = 'm'"));
+    }
+
+    #[test]
+    fn list_functions_query_variants_contain_pg_proc() {
+        assert!(list_functions_query(None).contains("pg_catalog.pg_proc"));
+        assert!(list_functions_query_extended(None).contains("prosrc"));
+    }
+
+    #[test]
+    fn list_schemas_query_variants_exclude_temp() {
+        assert!(list_schemas_query(None).contains("pg_temp_%"));
+        assert!(list_schemas_extended_query(None).contains("obj_description"));
+    }
+
+    #[test]
+    fn list_event_triggers_query_with_pattern() {
+        assert!(list_event_triggers_query(Some("t1")).contains("evtname ILIKE 't1'"));
+        assert!(list_event_triggers_query(None).contains("pg_event_trigger"));
+    }
+
+    #[test]
+    fn list_types_query_variants() {
+        assert!(list_types_query(None).contains("pg_type"));
+        assert!(list_types_query_extended(None).contains("typtype"));
+    }
+
+    #[test]
+    fn list_ts_queries_reference_expected_catalogs() {
+        assert!(list_ts_configs_query(None).contains("pg_ts_config"));
+        assert!(list_ts_parsers_query(None).contains("pg_ts_parser"));
+        assert!(list_ts_dicts_query(None).contains("pg_ts_dict"));
+        assert!(list_ts_templates_query(None).contains("pg_ts_template"));
+    }
+
+    #[test]
+    fn list_domains_and_collations_queries() {
+        assert!(list_domains_query(None).contains("typtype = 'd'"));
+        assert!(list_collations_query(None).contains("pg_collation"));
+    }
+
+    #[test]
+    fn list_partitioned_tables_query_filters_relkind_p() {
+        assert!(list_partitioned_tables_query(None).contains("c.relkind = 'p'"));
+    }
+
+    #[test]
+    fn list_access_methods_query_with_pattern() {
+        assert!(list_access_methods_query(Some("btree")).contains("amname ILIKE 'btree'"));
+    }
+
+    #[test]
+    fn list_role_grants_and_memberships_queries() {
+        assert!(list_role_grants_query(None).contains("pg_roles"));
+        assert!(list_role_memberships_query(None).contains("pg_auth_members"));
+    }
+
+    #[test]
+    fn list_indexes_and_sequences_queries() {
+        assert!(list_indexes_query(None).contains("c.relkind = 'i'"));
+        assert!(list_sequences_query(None).contains("c.relkind = 'S'"));
+    }
+
+    #[test]
+    fn list_casts_privileges_extensions_queries() {
+        assert!(list_casts_query(None).contains("pg_cast"));
+        assert!(list_privileges_query(None).contains("relacl"));
+        assert!(list_extensions_query(None).contains("pg_extension"));
+    }
+
+    #[test]
+    fn pset_help_and_sql_help_produce_text() {
+        assert!(pset_help().contains("border"));
+        assert!(sql_help(None).contains("Use \\h COMMAND"));
+        assert!(sql_help(Some("CREATE TABLE")).contains("create-table"));
+    }
+
+    #[test]
+    fn help_text_contains_sections() {
+        let h = help_text();
+        assert!(h.contains("Connection"));
+        assert!(h.contains("Formatting"));
+        assert!(h.contains("pgcli extensions"));
+    }
 }
