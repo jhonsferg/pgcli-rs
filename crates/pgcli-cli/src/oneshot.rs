@@ -154,7 +154,7 @@ pub async fn run_command(
                         .collect();
                     pgcli_output::formats::colorize_explain_plan(
                         &plan_lines,
-                        atty::is(atty::Stream::Stdout),
+                        std::io::IsTerminal::is_terminal(&std::io::stdout()),
                     )
                 } else {
                     let table_out = format_result(result, &format, &opts)?;
