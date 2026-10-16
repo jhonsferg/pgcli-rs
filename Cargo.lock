@@ -1170,6 +1170,91 @@ dependencies = [
 ]
 
 [[package]]
+name = "pgcli-connection"
+version = "0.1.0"
+dependencies = [
+ "dirs",
+ "native-tls",
+ "pgcli-core",
+ "postgres-native-tls",
+ "rustls",
+ "rustls-pemfile",
+ "rustls-pki-types",
+ "tempfile",
+ "tokio",
+ "tokio-native-tls",
+ "tokio-postgres",
+ "tokio-rustls",
+ "tracing",
+ "webpki-roots 0.26.11",
+]
+
+[[package]]
+name = "pgcli-core"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "hmac 0.12.1",
+ "postgres-types",
+ "rand 0.8.7",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror",
+ "tokio-postgres",
+ "uuid",
+]
+
+[[package]]
+name = "pgcli-executor"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "pgcli-core",
+ "tokio-postgres",
+ "tracing",
+]
+
+[[package]]
+name = "pgcli-meta"
+version = "0.1.0"
+dependencies = [
+ "dirs",
+ "pgcli-core",
+ "pgcli-executor",
+ "tokio-postgres",
+ "toml 0.8.23",
+]
+
+[[package]]
+name = "pgcli-output"
+version = "0.1.0"
+dependencies = [
+ "atty",
+ "colored",
+ "crossterm 0.27.0",
+ "csv",
+ "pgcli-core",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
+name = "pgcli-repl"
+version = "0.1.0"
+dependencies = [
+ "colored",
+ "dirs",
+ "pgcli-core",
+ "pgcli-executor",
+ "rustyline",
+ "rustyline-derive",
+ "tempfile",
+ "tokio-postgres",
+]
+
+[[package]]
 name = "pgcli-rs"
 version = "0.1.0"
 dependencies = [
