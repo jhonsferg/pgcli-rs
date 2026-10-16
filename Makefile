@@ -30,7 +30,7 @@ test:
 # Run integration tests against an already-running DB (DSN must be set).
 # Example: make integration DSN="postgresql://user:pass@host/db"
 integration:
-	PGCLI_RS_TEST_DSN="$(DSN)" cargo test --features integration-tests --test integration_tests
+	PGCLI_RS_TEST_DSN="$(DSN)" cargo test -p pgcli-cli --features integration-tests --test integration_tests
 
 # -- Quality -----------------------------------------------------------------
 
