@@ -432,13 +432,10 @@ impl ScriptRunner {
         raw.to_string()
     }
 
-    /// Substitute `:variable` references in `sql` with their current values.
+    /// Substitute `:variable`, `:'variable'` and `:"variable"` references in
+    /// `sql`, with the same rules as the interactive session.
     fn substitute(&self, sql: &str) -> String {
-        let mut result = sql.to_string();
-        for (name, value) in &self.variables {
-            result = result.replace(&format!(":{name}"), value);
-        }
-        result
+        pgcli_core::vars::substitute_variables(sql, &self.variables)
     }
 }
 
