@@ -256,29 +256,10 @@ impl MetaCommandDispatcher {
         Self::default()
     }
 
-    /// Substitute `:varname` tokens in `sql` with values from `self.variables`.
-    ///
-    /// Only whole-word `:name` patterns are replaced; `:name` inside literals or
-    /// identifiers is also substituted (same behaviour as psql).
+    /// Substitute `:name`, `:'name'` and `:"name"` references in `sql` with
+    /// values from `self.variables`. See [`pgcli_core::vars::substitute_variables`].
     pub fn substitute_vars(&self, sql: &str) -> String {
-        if self.variables.is_empty() || !sql.contains(':') {
-            return sql.to_string();
-        }
-        let mut result = sql.to_string();
-        // Sort by descending key length so longer names shadow prefixes.
-        let mut pairs: Vec<(&String, &String)> = self.variables.iter().collect();
-        pairs.sort_by_key(|b| std::cmp::Reverse(b.0.len()));
-        for (k, v) in pairs {
-            // :'name' → 'value' (psql single-quoted string literal substitution)
-            let escaped_sq = v.replace('\'', "''");
-            result = result.replace(&format!(":'{}'", k), &format!("'{}'", escaped_sq));
-            // :"name" → "value" (psql double-quoted identifier substitution)
-            let escaped_dq = v.replace('"', "\"\"");
-            result = result.replace(&format!(":\"{}\"", k), &format!("\"{}\"", escaped_dq));
-            // :name → value (bare substitution, done last so the quoted forms take priority)
-            result = result.replace(&format!(":{k}"), v);
-        }
-        result
+        pgcli_core::vars::substitute_variables(sql, &self.variables)
     }
 
     /// Dispatch `cmd` and return its result.
