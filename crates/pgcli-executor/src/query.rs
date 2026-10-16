@@ -36,19 +36,7 @@ impl QueryExecutor {
         // protocol issues with DDL like CREATE MATERIALIZED VIEW WITH DATA which
         // materializes rows internally but does not return them to the client.
         // SELECT and DML with RETURNING use prepare+query_raw to get typed rows.
-        let first_word = sql_clean
-            .split_whitespace()
-            .next()
-            .unwrap_or("")
-            .to_ascii_uppercase();
-        let is_returning_select = first_word == "SELECT"
-            || first_word == "TABLE"
-            || first_word == "VALUES"
-            || first_word == "WITH"
-            || first_word == "EXPLAIN"  // EXPLAIN always returns rows
-            || sql_clean.to_ascii_uppercase().contains("RETURNING");
-
-        if !is_returning_select {
+        if !returns_rows(sql_clean) {
             return Self::execute_dml(client, sql_clean).await;
         }
 
@@ -66,18 +54,6 @@ impl QueryExecutor {
 
         futures_util::pin_mut!(row_stream);
 
-        let mut pg_rows = Vec::new();
-        while let Some(row) = row_stream
-            .try_next()
-            .await
-            .map_err(|e| PgCliError::Query(format_db_error(&e, sql_clean)))?
-        {
-            pg_rows.push(row);
-        }
-        let affected_rows = row_stream.rows_affected();
-
-        let duration_ms = start.elapsed().as_millis() as u64;
-
         let columns: Vec<Column> = statement
             .columns()
             .iter()
@@ -89,15 +65,23 @@ impl QueryExecutor {
             })
             .collect();
 
-        let rows: Vec<Row> = pg_rows
-            .iter()
-            .map(|pg_row| {
-                let values: Vec<CellValue> = (0..columns.len())
-                    .map(|i| extract_cell(pg_row, i))
-                    .collect();
-                Row { values }
-            })
-            .collect();
+        // Convert each row as it arrives, so the raw wire row is dropped right
+        // away instead of keeping every raw row and its converted copy in memory
+        // at the same time.
+        let mut rows: Vec<Row> = Vec::new();
+        while let Some(pg_row) = row_stream
+            .try_next()
+            .await
+            .map_err(|e| PgCliError::Query(format_db_error(&e, sql_clean)))?
+        {
+            let values: Vec<CellValue> = (0..columns.len())
+                .map(|i| extract_cell(&pg_row, i))
+                .collect();
+            rows.push(Row { values });
+        }
+        let affected_rows = row_stream.rows_affected();
+
+        let duration_ms = start.elapsed().as_millis() as u64;
 
         let row_count = rows.len();
         let verb = sql_clean
@@ -203,7 +187,7 @@ impl QueryExecutor {
 ///
 /// Dollar-quoting is used extensively in PostgreSQL function bodies.
 /// A semicolon inside a dollar-quoted block does NOT split statements.
-fn split_statements(sql: &str) -> Vec<String> {
+pub fn split_statements(sql: &str) -> Vec<String> {
     let mut statements = Vec::new();
     let mut current = String::new();
     let mut chars = sql.chars().peekable();
@@ -474,9 +458,58 @@ pub(crate) fn format_db_error(e: &tokio_postgres::Error, sql: &str) -> String {
     base
 }
 
+/// Whether `sql` (without its trailing semicolon) returns rows, so that it
+/// must run through prepare + query to get typed columns.
+///
+/// `SHOW` and `FETCH` are utility statements but return rows, like `SELECT`.
+fn returns_rows(sql: &str) -> bool {
+    let first_word = sql
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .to_ascii_uppercase();
+    matches!(
+        first_word.as_str(),
+        "SELECT" | "TABLE" | "VALUES" | "WITH" | "EXPLAIN" | "SHOW" | "FETCH"
+    ) || sql.to_ascii_uppercase().contains("RETURNING")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn show_and_fetch_return_rows() {
+        assert!(returns_rows("SHOW ssl"));
+        assert!(returns_rows("show search_path"));
+        assert!(returns_rows("FETCH ALL FROM c"));
+    }
+
+    #[test]
+    fn queries_and_returning_dml_return_rows() {
+        for sql in [
+            "SELECT 1",
+            "TABLE t",
+            "VALUES (1)",
+            "WITH x AS (SELECT 1) SELECT * FROM x",
+            "EXPLAIN SELECT 1",
+            "INSERT INTO t VALUES (1) RETURNING id",
+        ] {
+            assert!(returns_rows(sql), "{sql}");
+        }
+    }
+
+    #[test]
+    fn ddl_and_plain_dml_do_not_return_rows() {
+        for sql in [
+            "CREATE TABLE t (id int)",
+            "INSERT INTO t VALUES (1)",
+            "SET search_path = public",
+            "VACUUM",
+        ] {
+            assert!(!returns_rows(sql), "{sql}");
+        }
+    }
 
     // -- split_statements ----------------------------------------------------
 
