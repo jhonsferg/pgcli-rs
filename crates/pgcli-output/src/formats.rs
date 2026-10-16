@@ -233,17 +233,17 @@ pub fn format_result(
         OutputFormat::Csv => {
             let mut buf = Vec::new();
             CsvExporter::export(result, &mut buf)?;
-            Ok(String::from_utf8_lossy(&buf).into_owned())
+            Ok(into_string(buf))
         }
         OutputFormat::Json => {
             let mut buf = Vec::new();
             JsonExporter::export_array(result, &mut buf)?;
-            Ok(String::from_utf8_lossy(&buf).into_owned())
+            Ok(into_string(buf))
         }
         OutputFormat::Jsonl => {
             let mut buf = Vec::new();
             JsonExporter::export_lines(result, &mut buf)?;
-            Ok(String::from_utf8_lossy(&buf).into_owned())
+            Ok(into_string(buf))
         }
         OutputFormat::Tsv => format_tsv(result, opts),
         OutputFormat::Html => format_html(result, opts),
@@ -252,6 +252,12 @@ pub fn format_result(
         OutputFormat::Latex => format_latex(result, opts),
         OutputFormat::Asciidoc => format_asciidoc(result, opts),
     }
+}
+
+/// Turns an exporter buffer into a `String` without copying it when it is
+/// valid UTF-8, which it always is for text produced from `QueryResult` cells.
+fn into_string(buf: Vec<u8>) -> String {
+    String::from_utf8(buf).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned())
 }
 
 /// Format as tab-separated values.
