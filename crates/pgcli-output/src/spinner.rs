@@ -19,7 +19,7 @@ impl Spinner {
     /// Start a spinner on stderr. Returns `None` if stderr is not a TTY
     /// (so piped/redirected output is never polluted with spinner chars).
     pub fn start(msg: &str) -> Option<Self> {
-        if !atty::is(atty::Stream::Stderr) {
+        if !std::io::IsTerminal::is_terminal(&std::io::stderr()) {
             return None;
         }
         let stop = Arc::new(AtomicBool::new(false));
