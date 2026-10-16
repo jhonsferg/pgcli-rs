@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- The code is split into a Cargo workspace: `pgcli-core`, `pgcli-connection`, `pgcli-executor`, `pgcli-output`, `pgcli-meta`, `pgcli-repl` and `pgcli-cli` (the `pgcli` binary).
+- The interactive prompt appears without waiting for the schema cache: it now loads in the background, in a single round trip instead of ten.
+- Each statement typed at the prompt saves a round trip: the transaction indicator is only queried inside an explicit transaction block.
+- Large results use about 40% less memory, and `--export` no longer runs the query a second time.
+- Dependencies updated to their latest versions; `atty` and `rustls-pemfile` are replaced.
+- Client keys for the rustls backend may now be PKCS#8, PKCS#1 or SEC1 PEM.
+
+### Fixed
+- `SHOW` and `FETCH` print their rows instead of only the command tag.
+- Scripts run with `-f` accept `:'name'` and `:"name"` variables, like the interactive session.
+- `--export` with an `INSERT ... RETURNING` inserted the rows twice.
+- A wrong password or unknown database fails at once instead of after several seconds of retries.
+- Shell completions are generated for the `pgcli` binary instead of `pgcli-rs`.
+
+### Security
+- `--require-tls` and `verify-full` no longer fall back to an unencrypted connection when the server does not offer TLS.
+- With the rustls backend, `prefer` and `require` encrypt connections to servers with a self-signed certificate, as libpq does, instead of falling back to plain text.
+- With the native-tls backend, `verify-full` set through `PGSSLMODE` now verifies the server certificate.
+
 ### Added
 - Initial project scaffold: all modules stubbed and documented.
 - `PgCliError` unified error type with all required variants.
