@@ -3,7 +3,6 @@
 /// Supports Trust, Password (cleartext), MD5, and SCRAM-SHA-256.
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use hmac::{Hmac, Mac};
-use rand::RngCore;
 use sha2::{Digest, Sha256};
 
 use crate::error::{PgCliError, Result};
@@ -70,8 +69,7 @@ pub struct ScramClient {
 impl ScramClient {
     /// Create a new SCRAM-SHA-256 client for the given credentials.
     pub fn new(username: &str, password: &str) -> Self {
-        let mut nonce_bytes = [0u8; 18];
-        rand::thread_rng().fill_bytes(&mut nonce_bytes);
+        let nonce_bytes: [u8; 18] = rand::random();
         let client_nonce = BASE64.encode(nonce_bytes);
         Self {
             username: username.to_string(),
@@ -207,7 +205,8 @@ fn pbkdf2_sha256(password: &[u8], salt: &[u8], iterations: u32) -> Vec<u8> {
 
 /// Compute HMAC-SHA256(key, data).
 fn hmac_sha256(key: &[u8], data: &[u8]) -> Vec<u8> {
-    let mut mac = <Hmac<Sha256>>::new_from_slice(key).expect("HMAC accepts any key length");
+    let mut mac = <Hmac<Sha256> as hmac::digest::KeyInit>::new_from_slice(key)
+        .expect("HMAC accepts any key length");
     mac.update(data);
     mac.finalize().into_bytes().to_vec()
 }
