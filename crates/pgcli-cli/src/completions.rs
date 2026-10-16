@@ -15,7 +15,7 @@ use crate::args::CliArgs;
 /// Returns an I/O error if writing to `writer` fails.
 pub fn generate_completions(shell: Shell, writer: &mut dyn io::Write) -> io::Result<()> {
     let mut cmd = CliArgs::command();
-    generate(shell, &mut cmd, "pgcli-rs", writer);
+    generate(shell, &mut cmd, "pgcli", writer);
     Ok(())
 }
 
@@ -29,6 +29,15 @@ mod tests {
         let mut buf = Vec::new();
         generate_completions(Shell::Bash, &mut buf).expect("generation failed");
         assert!(!buf.is_empty());
+    }
+
+    #[test]
+    fn completions_target_the_pgcli_binary() {
+        let mut buf = Vec::new();
+        generate_completions(Shell::Bash, &mut buf).expect("generation failed");
+        let script = String::from_utf8(buf).expect("utf-8");
+        assert!(script.contains("complete -F _pgcli"), "{script}");
+        assert!(!script.contains("pgcli-rs"), "must not target pgcli-rs");
     }
 
     #[test]
