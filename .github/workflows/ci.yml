@@ -41,10 +41,10 @@ jobs:
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2
 
       - name: Check formatting
-        run: rustfmt --edition 2021 --check $(find src -name "*.rs" | sort)
+        run: rustfmt --edition 2021 --check $(find crates -name "*.rs" | sort)
 
       - name: Clippy (deny warnings)
-        run: cargo clippy --all-features -- -D warnings
+        run: cargo clippy --workspace --all-features -- -D warnings
 
   # -- Unit tests - Windows · Linux · macOS -------------------------------------
   test:
@@ -69,10 +69,10 @@ jobs:
           key: ${{ matrix.os }}
 
       - name: Run unit tests
-        run: cargo test --all-targets -- --nocapture
+        run: cargo test --workspace --all-targets -- --nocapture
 
       - name: Verify release build compiles
-        run: cargo build --release
+        run: cargo build --release -p pgcli-cli
 
   # -- Auto-tag + release (push to main only) ------------------------------------
   #
