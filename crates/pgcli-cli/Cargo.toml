@@ -21,7 +21,6 @@ rustls-backend = ["pgcli-connection/rustls-backend"]
 integration-tests = []
 
 [dependencies]
-atty.workspace = true
 bytes.workspace = true
 chrono.workspace = true
 clap.workspace = true
