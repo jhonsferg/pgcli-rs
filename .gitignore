@@ -120,3 +120,7 @@ yarn-error.log*
 # -- Cargo.lock policy --------------------------------------------------------
 # Binaries: lock file is committed so reproducible builds work in CI.
 # (Remove this comment and add Cargo.lock below if converting to a library.)
+
+# -- AI tools ------------------------------------------------------------------
+.claude/
+.agents/
