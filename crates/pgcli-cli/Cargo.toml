@@ -1,0 +1,52 @@
+[package]
+name = "pgcli-cli"
+description = "A self-contained PostgreSQL CLI client written in pure Rust"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+keywords = ["postgresql", "cli", "database", "psql"]
+categories = ["command-line-utilities", "database"]
+
+[[bin]]
+name = "pgcli"
+path = "src/main.rs"
+
+[features]
+default = ["native-tls-backend"]
+native-tls-backend = ["pgcli-connection/native-tls-backend"]
+rustls-backend = ["pgcli-connection/rustls-backend"]
+integration-tests = []
+
+[dependencies]
+atty.workspace = true
+bytes.workspace = true
+chrono.workspace = true
+clap.workspace = true
+clap_complete.workspace = true
+crossterm.workspace = true
+dirs.workspace = true
+futures-util.workspace = true
+pgcli-connection.workspace = true
+pgcli-core.workspace = true
+pgcli-executor.workspace = true
+pgcli-meta.workspace = true
+pgcli-output.workspace = true
+pgcli-repl.workspace = true
+rpassword.workspace = true
+tokio.workspace = true
+tokio-postgres.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[[test]]
+name = "integration_tests"
+path = "tests/integration_tests.rs"
+required-features = ["integration-tests"]
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+tempfile.workspace = true
+tokio-test.workspace = true
