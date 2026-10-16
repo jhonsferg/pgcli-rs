@@ -47,6 +47,9 @@ pub struct Session<'a> {
     pub pager: Pager,
     /// Schema cache shared with the highlighter.
     pub schema_cache: SharedSchemaCache,
+    /// Whether an explicit transaction block (`BEGIN` ... `COMMIT`) may be
+    /// open, so the prompt indicator needs to ask the server.
+    pub txn_block_open: bool,
 }
 
 /// Runs the interactive REPL until `\q` or end of input.
@@ -61,10 +64,10 @@ pub async fn run_repl(args: &CliArgs, conn_cfg: ConnectionConfig) -> pgcli_core:
     let dbname = conn_cfg.database.clone();
 
     // Build schema cache and do an initial refresh in the background.
+    // Load the completion cache in the background: the prompt does not wait
+    // for the catalog queries.
     let schema_cache = SchemaCache::new_shared();
-    if let Err(e) = SchemaCache::refresh(&schema_cache, pool.client()).await {
-        tracing::warn!("Schema cache initial load failed: {e}");
-    }
+    SchemaCache::spawn_refresh(schema_cache.clone(), pool.shared_client());
 
     let highlighter = SqlHighlighter::new(&args.theme).with_cache(schema_cache.clone());
     let history_path = args
@@ -112,6 +115,7 @@ pub async fn run_repl(args: &CliArgs, conn_cfg: ConnectionConfig) -> pgcli_core:
         opts,
         pager,
         schema_cache,
+        txn_block_open: false,
     };
 
     loop {
