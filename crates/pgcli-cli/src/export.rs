@@ -4,15 +4,13 @@
 use std::io::Write as _;
 
 use pgcli_core::error::PgCliError;
-use pgcli_executor::query::QueryExecutor;
+use pgcli_core::protocol::messages::QueryResult;
 use pgcli_output::formats::{format_result, FormatOptions, OutputFormat};
 
-/// Export the result of `sql` to `path`, inferring format from the file extension.
-pub async fn export_to_file(
-    client: &tokio_postgres::Client,
-    sql: &str,
-    path: &std::path::Path,
-) -> pgcli_core::Result<()> {
+/// Export `results` to `path`, inferring the format from the file extension.
+///
+/// The caller passes the results it already has, so the statement runs only once.
+pub fn export_results(results: &[QueryResult], path: &std::path::Path) -> pgcli_core::Result<()> {
     use pgcli_output::export::{csv::CsvExporter, json::JsonExporter, sql::SqlExporter};
 
     let ext = path
@@ -21,10 +19,9 @@ pub async fn export_to_file(
         .unwrap_or("")
         .to_lowercase();
 
-    let results = QueryExecutor::execute_batch(client, sql).await?;
     let mut file = std::fs::File::create(path).map_err(PgCliError::Io)?;
 
-    for result in &results {
+    for result in results {
         match ext.as_str() {
             "csv" => CsvExporter::export(result, &mut file)?,
             "json" => JsonExporter::export_array(result, &mut file)?,
@@ -43,4 +40,14 @@ pub async fn export_to_file(
     }
     println!("Exported to '{}'.", path.display());
     Ok(())
+}
+
+/// Runs `sql` and exports its results to `path`.
+pub async fn export_to_file(
+    client: &tokio_postgres::Client,
+    sql: &str,
+    path: &std::path::Path,
+) -> pgcli_core::Result<()> {
+    let results = pgcli_executor::query::QueryExecutor::execute_batch(client, sql).await?;
+    export_results(&results, path)
 }
