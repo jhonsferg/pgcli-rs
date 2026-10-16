@@ -5,7 +5,7 @@
 /// Tab completion suggests SQL keywords and, when a schema cache is attached,
 /// also table names, column names, schema names, and function names.
 use colored::Colorize;
-use rustyline::highlight::Highlighter;
+use rustyline::highlight::{CmdKind, Highlighter};
 use rustyline_derive::{Helper, Hinter, Validator};
 
 use crate::schema_cache::SharedSchemaCache;
@@ -339,8 +339,10 @@ impl Highlighter for SqlHighlighter {
         std::borrow::Cow::Owned(self.highlight_sql(line))
     }
 
-    fn highlight_char(&self, _line: &str, _pos: usize) -> bool {
-        self.enabled
+    fn highlight_char(&self, _line: &str, _pos: usize, kind: CmdKind) -> bool {
+        // The colors depend only on the text, not on the cursor position, so a
+        // plain cursor move never needs a repaint.
+        self.enabled && kind != CmdKind::MoveCursor
     }
 }
 
