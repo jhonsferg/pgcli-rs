@@ -4,6 +4,7 @@ use std::path::Path;
 
 use pgcli_cli::CliArgs;
 use pgcli_connection::{config::ConnectionConfig, pool::ConnectionPool};
+use pgcli_core::protocol::messages::QueryResult;
 use pgcli_executor::{query::QueryExecutor, runner::ScriptRunner};
 use pgcli_meta::{
     commands::{MetaCommand, MetaCommandDispatcher, MetaResult},
@@ -14,7 +15,7 @@ use pgcli_output::{
     stats::{estimate_result_bytes, BenchStats},
 };
 
-use crate::export::export_to_file;
+use crate::export::export_results;
 use crate::settings::{
     build_format_opts, build_pager, seed_variables, seed_variables_into_runner, write_output,
     write_output_or_pager,
@@ -123,6 +124,9 @@ pub async fn run_command(
         let sql = &dispatcher.substitute_vars(sql);
         let mut bench = BenchStats::new(repeat);
         let mut last_output = String::new();
+        // Results of the first run, kept for `--export` so the statement is not
+        // executed a second time (it may be an INSERT ... RETURNING).
+        let mut results_for_export: Option<Vec<QueryResult>> = None;
 
         for i in 0..repeat {
             let t0 = std::time::Instant::now();
@@ -167,11 +171,20 @@ pub async fn run_command(
                     }
                 };
                 run_bytes += estimate_result_bytes(&out);
-                run_output.push_str(&out);
+                // Move the first output instead of copying it: for a single large
+                // result this avoids holding the rendered text twice.
+                if run_output.is_empty() {
+                    run_output = out;
+                } else {
+                    run_output.push_str(&out);
+                }
             }
             bench.record(elapsed, run_rows, run_bytes);
             if i == 0 {
                 last_output = run_output;
+                if args.export.is_some() {
+                    results_for_export = Some(results);
+                }
             }
         }
 
@@ -180,9 +193,9 @@ pub async fn run_command(
             eprint!("{}", bench.report());
         }
 
-        // --export: write last result to file with format from extension.
-        if let Some(ref export_path) = args.export {
-            export_to_file(pool.client(), sql, export_path).await?;
+        // --export: write the result to a file with the format from its extension.
+        if let (Some(export_path), Some(results)) = (&args.export, &results_for_export) {
+            export_results(results, export_path)?;
         }
     }
     Ok(())
