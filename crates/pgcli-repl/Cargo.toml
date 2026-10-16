@@ -15,7 +15,9 @@ pgcli-core.workspace = true
 pgcli-executor.workspace = true
 rustyline.workspace = true
 rustyline-derive.workspace = true
+tokio.workspace = true
 tokio-postgres.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
