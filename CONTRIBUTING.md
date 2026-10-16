@@ -21,14 +21,14 @@ cargo build
 Unit tests (no database required):
 
 ```sh
-cargo test --lib
+cargo test --workspace --lib
 ```
 
 Integration tests (requires a live PostgreSQL instance):
 
 ```sh
 PGCLI_RS_TEST_DSN="postgresql://user:pass@localhost/testdb" \
-  cargo test --features integration-tests
+  cargo test -p pgcli-cli --features integration-tests
 ```
 
 ## Code Quality
@@ -36,9 +36,9 @@ PGCLI_RS_TEST_DSN="postgresql://user:pass@localhost/testdb" \
 All PRs must pass:
 
 ```sh
-cargo fmt --check
-cargo clippy -- -D warnings
-cargo test --lib
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace --lib
 cargo doc --no-deps
 ```
 
@@ -63,22 +63,22 @@ chore(ci): add aarch64 to release matrix
 ## PR Requirements
 
 - All tests pass.
-- `cargo clippy -- -D warnings` is clean.
-- `cargo fmt --check` passes.
+- `cargo clippy --workspace --all-targets -- -D warnings` is clean.
+- `cargo fmt --all --check` passes.
 - Doc comments on all new `pub` items.
 - Unit tests added for new logic.
 
 ## Adding a New Meta-Command
 
-1. Add a match arm in `src/meta/commands.rs` `MetaCommandDispatcher::dispatch()`.
+1. Add a match arm in `crates/pgcli-meta/src/commands.rs` `MetaCommandDispatcher::dispatch()`.
 2. Return `MetaResult::Query(sql)` for catalog queries or `MetaResult::Output(s)` for static output.
 3. Add a unit test in the `#[cfg(test)]` block.
 4. Document the command in the `help_text()` function.
 
 ## Adding a New Export Format
 
-1. Create `src/export/yourformat.rs` implementing the export logic.
-2. Add `pub mod yourformat;` in `src/export/mod.rs`.
-3. Add the format variant to `OutputFormat` in `src/output/formats.rs`.
+1. Create `crates/pgcli-output/src/export/yourformat.rs` implementing the export logic.
+2. Add `pub mod yourformat;` in `crates/pgcli-output/src/export/mod.rs`.
+3. Add the format variant to `OutputFormat` in `crates/pgcli-output/src/formats.rs`.
 4. Wire it into `format_result()` in the same file.
 5. Add unit tests.
