@@ -1,0 +1,18 @@
+[package]
+name = "pgcli-output"
+description = "Result formatting, pager, spinner and data export for pgcli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+atty.workspace = true
+colored.workspace = true
+crossterm.workspace = true
+csv.workspace = true
+pgcli-core.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
