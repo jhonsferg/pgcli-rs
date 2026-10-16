@@ -3,5 +3,6 @@
 
 pub mod error;
 pub mod protocol;
+pub mod vars;
 
 pub use error::{PgCliError, Result};
