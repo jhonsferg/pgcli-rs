@@ -9,7 +9,6 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
-atty.workspace = true
 colored.workspace = true
 crossterm.workspace = true
 csv.workspace = true
