@@ -48,12 +48,11 @@ impl Session<'_> {
                             self.pool.config().database,
                             self.pool.config().user
                         );
-                        // Refresh schema cache for the new database.
-                        if let Err(e) =
-                            SchemaCache::refresh(&self.schema_cache, self.pool.client()).await
-                        {
-                            tracing::warn!("Schema cache refresh after reconnect failed: {e}");
-                        }
+                        // Refresh the schema cache for the new database in the background.
+                        SchemaCache::spawn_refresh(
+                            self.schema_cache.clone(),
+                            self.pool.shared_client(),
+                        );
                     }
                     Err(e) => {
                         eprintln!("ERROR: could not connect to \"{db_display}\": {e}")
