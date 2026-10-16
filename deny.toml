@@ -16,9 +16,11 @@ allow = [
   "ISC",
   "BSD-2-Clause",
   "BSD-3-Clause",
+  "BSL-1.0",
   "Unicode-DFS-2016",
   "Zlib",
   "CC0-1.0",
+  "MPL-2.0",
 ]
 # Default confidence threshold for automated license detection.
 confidence-threshold = 0.93
