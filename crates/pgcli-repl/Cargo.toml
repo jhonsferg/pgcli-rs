@@ -1,0 +1,21 @@
+[package]
+name = "pgcli-repl"
+description = "Interactive line editor, highlighting, history and schema cache for pgcli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+colored.workspace = true
+dirs.workspace = true
+pgcli-core.workspace = true
+pgcli-executor.workspace = true
+rustyline.workspace = true
+rustyline-derive.workspace = true
+tokio-postgres.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
