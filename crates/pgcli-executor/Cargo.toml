@@ -1,0 +1,15 @@
+[package]
+name = "pgcli-executor"
+description = "SQL execution, pipelines and script running for pgcli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+futures-util.workspace = true
+pgcli-core.workspace = true
+tokio-postgres.workspace = true
+tracing.workspace = true
