@@ -106,7 +106,7 @@ Download from the [Releases](https://github.com/jhonsferg/pgcli-rs/releases) pag
 ```sh
 git clone https://github.com/jhonsferg/pgcli-rs
 cd pgcli-rs
-cargo build --release
+cargo build --release -p pgcli-cli
 ./target/release/pgcli --version
 ```
 
@@ -114,7 +114,7 @@ cargo build --release
 
 ```sh
 rustup target add x86_64-unknown-linux-musl
-cargo build --release --target x86_64-unknown-linux-musl
+cargo build --release -p pgcli-cli --target x86_64-unknown-linux-musl
 # Result: target/x86_64-unknown-linux-musl/release/pgcli (~7 MB, no dynamic deps)
 ```
 
@@ -488,17 +488,17 @@ Memory footprint: **< 10 MB RSS** at peak for a 1 000-row result set.
 
 ```sh
 # Unit tests - no database required
-cargo test --lib
+cargo test --workspace --lib
 
 # Lint check
-cargo clippy -- -D warnings
+cargo clippy --workspace --all-targets -- -D warnings
 
 # Format check
-cargo fmt --check
+cargo fmt --all --check
 
 # Integration tests - requires a live PostgreSQL instance
 PGCLI_RS_TEST_DSN="postgresql://user:pass@localhost/testdb" \
-  cargo test --features integration-tests
+  cargo test -p pgcli-cli --features integration-tests
 
 # Build documentation
 cargo doc --no-deps --open
@@ -592,7 +592,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding conventions
 - No `.unwrap()` / `.expect()` outside `main.rs`
 - All `pub` items have `///` doc comments
 - Every module has a `#[cfg(test)]` block
-- `cargo fmt` + `cargo clippy -- -D warnings` must pass
+- `cargo fmt --all` + `cargo clippy --workspace --all-targets -- -D warnings` must pass
 - No libpq or C PostgreSQL bindings of any kind
 - Use `tracing::error!` / `warn!` / `info!`-never `eprintln!`
 
