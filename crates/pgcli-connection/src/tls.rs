@@ -53,6 +53,15 @@ impl TlsConfig {
     pub fn requires_tls(&self) -> bool {
         matches!(self.mode, TlsMode::Require | TlsMode::VerifyFull)
     }
+
+    /// Returns `true` when the server certificate must be verified.
+    ///
+    /// Follows libpq: `prefer` and `require` encrypt without verifying the
+    /// certificate, unless a CA file is given; `verify-full` always verifies,
+    /// against the CA file or else the default trust roots.
+    pub fn verifies_server_cert(&self) -> bool {
+        self.mode == TlsMode::VerifyFull || self.ca_path.is_some()
+    }
 }
 
 /// Build a `tokio_postgres::tls::NoTls` connector for disabled TLS.
@@ -68,8 +77,9 @@ pub fn build_no_tls() -> Result<tokio_postgres::NoTls> {
 #[cfg(feature = "native-tls-backend")]
 /// Build a `postgres_native_tls::MakeTlsConnector` from the given `TlsConfig`.
 ///
-/// Uses `danger_accept_invalid_certs` for Prefer/Require modes (no CA provided).
-/// When a CA path is set, certificate verification is enabled.
+/// Skips certificate verification when [`TlsConfig::verifies_server_cert`] is
+/// false (`prefer`/`require` without a CA). `verify-full` verifies against the
+/// CA file when one is set, or else the system trust roots.
 ///
 /// # Errors
 ///
@@ -79,8 +89,8 @@ pub fn build_native_tls(config: &TlsConfig) -> Result<postgres_native_tls::MakeT
 
     let mut builder = TlsConnector::builder();
 
-    // Accept self-signed certs in Prefer/Require modes unless a CA is supplied.
-    if config.ca_path.is_none() {
+    // Encrypt without verifying in prefer/require mode without a CA, as libpq does.
+    if !config.verifies_server_cert() {
         builder.danger_accept_invalid_certs(true);
     }
 
@@ -90,7 +100,6 @@ pub fn build_native_tls(config: &TlsConfig) -> Result<postgres_native_tls::MakeT
         let cert = native_tls::Certificate::from_pem(&pem)
             .map_err(|e| PgCliError::Connection(format!("invalid CA cert: {e}")))?;
         builder.add_root_certificate(cert);
-        builder.danger_accept_invalid_certs(false);
     }
 
     if let (Some(cert_path), Some(key_path)) = (&config.cert_path, &config.key_path) {
@@ -235,13 +244,13 @@ where
 #[cfg(feature = "rustls-backend")]
 /// Build a [`RustlsConnector`] from the given [`TlsConfig`].
 ///
-/// Uses the `webpki-roots` trust store by default.  When `ca_path` is set,
-/// only that CA is trusted (enabling pinned-CA / self-signed setups).
-/// When both `cert_path` and `key_path` are set, mutual TLS is enabled.
-///
-/// The private key must be in PKCS#8 PEM format.  Convert a traditional
-/// RSA key with:
-///   `openssl pkcs8 -topk8 -nocrypt -in key.pem -out key-pkcs8.pem`
+/// When [`TlsConfig::verifies_server_cert`] is false (`prefer`/`require`
+/// without a CA) the connection is encrypted but the server certificate is
+/// not checked, as libpq does; the handshake signatures are still verified.
+/// Otherwise only `ca_path` is trusted when set (pinned-CA / self-signed
+/// setups), or the `webpki-roots` trust store when not.
+/// When both `cert_path` and `key_path` are set, mutual TLS is enabled; the
+/// key may be PKCS#8, PKCS#1 (RSA) or SEC1 (EC) PEM.
 ///
 /// # Errors
 ///
@@ -258,23 +267,28 @@ pub fn build_rustls(config: &TlsConfig) -> Result<RustlsConnector> {
     // (e.g. from a previous connection attempt), we simply keep using it.
     let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
 
-    let mut root_store = RootCertStore::empty();
-
-    if let Some(ca_path) = &config.ca_path {
-        let ca_data = std::fs::read(ca_path)
-            .map_err(|e| PgCliError::Connection(format!("failed to read CA cert: {e}")))?;
-        for cert in CertificateDer::pem_slice_iter(&ca_data) {
-            let cert =
-                cert.map_err(|e| PgCliError::Connection(format!("invalid CA cert PEM: {e}")))?;
-            root_store
-                .add(cert)
-                .map_err(|e| PgCliError::Connection(format!("invalid CA cert: {e}")))?;
+    let builder = if config.verifies_server_cert() {
+        let mut root_store = RootCertStore::empty();
+        if let Some(ca_path) = &config.ca_path {
+            let ca_data = std::fs::read(ca_path)
+                .map_err(|e| PgCliError::Connection(format!("failed to read CA cert: {e}")))?;
+            for cert in CertificateDer::pem_slice_iter(&ca_data) {
+                let cert =
+                    cert.map_err(|e| PgCliError::Connection(format!("invalid CA cert PEM: {e}")))?;
+                root_store
+                    .add(cert)
+                    .map_err(|e| PgCliError::Connection(format!("invalid CA cert: {e}")))?;
+            }
+        } else {
+            root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
         }
+        ClientConfig::builder().with_root_certificates(root_store)
     } else {
-        root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-    }
-
-    let builder = ClientConfig::builder().with_root_certificates(root_store);
+        let provider = Arc::new(tokio_rustls::rustls::crypto::ring::default_provider());
+        ClientConfig::builder()
+            .dangerous()
+            .with_custom_certificate_verifier(Arc::new(EncryptOnlyVerifier(provider)))
+    };
 
     let tls_config =
         if let (Some(cert_path), Some(key_path)) = (&config.cert_path, &config.key_path) {
@@ -308,6 +322,69 @@ pub fn build_rustls(config: &TlsConfig) -> Result<RustlsConnector> {
     })
 }
 
+#[cfg(feature = "rustls-backend")]
+/// Certificate verifier for `prefer`/`require` without a CA: accepts any
+/// server certificate (libpq does not check it in those modes) but still
+/// verifies the handshake signatures with the crypto provider, so the session
+/// keys are bound to the certificate the server presented.
+#[derive(Debug)]
+struct EncryptOnlyVerifier(std::sync::Arc<tokio_rustls::rustls::crypto::CryptoProvider>);
+
+#[cfg(feature = "rustls-backend")]
+impl tokio_rustls::rustls::client::danger::ServerCertVerifier for EncryptOnlyVerifier {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &rustls_pki_types::CertificateDer<'_>,
+        _intermediates: &[rustls_pki_types::CertificateDer<'_>],
+        _server_name: &rustls_pki_types::ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: rustls_pki_types::UnixTime,
+    ) -> std::result::Result<
+        tokio_rustls::rustls::client::danger::ServerCertVerified,
+        tokio_rustls::rustls::Error,
+    > {
+        Ok(tokio_rustls::rustls::client::danger::ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &rustls_pki_types::CertificateDer<'_>,
+        dss: &tokio_rustls::rustls::DigitallySignedStruct,
+    ) -> std::result::Result<
+        tokio_rustls::rustls::client::danger::HandshakeSignatureValid,
+        tokio_rustls::rustls::Error,
+    > {
+        tokio_rustls::rustls::crypto::verify_tls12_signature(
+            message,
+            cert,
+            dss,
+            &self.0.signature_verification_algorithms,
+        )
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &rustls_pki_types::CertificateDer<'_>,
+        dss: &tokio_rustls::rustls::DigitallySignedStruct,
+    ) -> std::result::Result<
+        tokio_rustls::rustls::client::danger::HandshakeSignatureValid,
+        tokio_rustls::rustls::Error,
+    > {
+        tokio_rustls::rustls::crypto::verify_tls13_signature(
+            message,
+            cert,
+            dss,
+            &self.0.signature_verification_algorithms,
+        )
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<tokio_rustls::rustls::SignatureScheme> {
+        self.0.signature_verification_algorithms.supported_schemes()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -317,6 +394,26 @@ mod tests {
         let cfg = TlsConfig::new(TlsMode::Disabled);
         assert!(cfg.allows_plain_fallback());
         assert!(!cfg.requires_tls());
+    }
+
+    #[test]
+    fn prefer_and_require_without_ca_do_not_verify_the_certificate() {
+        assert!(!TlsConfig::new(TlsMode::Prefer).verifies_server_cert());
+        assert!(!TlsConfig::new(TlsMode::Require).verifies_server_cert());
+    }
+
+    #[test]
+    fn verify_full_or_a_ca_file_verifies_the_certificate() {
+        assert!(TlsConfig::new(TlsMode::VerifyFull).verifies_server_cert());
+        let mut with_ca = TlsConfig::new(TlsMode::Require);
+        with_ca.ca_path = Some(PathBuf::from("/tmp/ca.pem"));
+        assert!(with_ca.verifies_server_cert());
+    }
+
+    #[cfg(feature = "rustls-backend")]
+    #[test]
+    fn build_rustls_without_ca_in_prefer_mode_succeeds() {
+        assert!(build_rustls(&TlsConfig::new(TlsMode::Prefer)).is_ok());
     }
 
     #[test]
