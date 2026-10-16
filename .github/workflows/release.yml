@@ -158,12 +158,12 @@ jobs:
       # -- Embed the tag version into Cargo.toml before compiling ---------------
       #
       # The tag (e.g. v1.1.0) is stripped of its leading 'v' and written into
-      # Cargo.toml and Cargo.lock so that `pgcli-rs --version` reports the
+      # Cargo.toml and Cargo.lock so that `pgcli --version` reports the
       # correct version without committing anything to main.
       #
       # sed note: macOS uses BSD sed which does not support GNU-only 0,/pat/
       # address ranges. The simple s/^version = .../ pattern is portable because
-      # only the [package] version line starts at column 0 in our Cargo.toml.
+      # only the [workspace.package] version line starts at column 0 in our Cargo.toml.
       # Cargo.lock needs a two-line match so perl is used there instead.
       - name: Set version from tag
         shell: bash
@@ -172,9 +172,9 @@ jobs:
           # Cargo.toml - simple substitution, no GNU-only address ranges
           sed -i.bak 's/^version = "[^"]*"/version = "'"${VERSION}"'"/' Cargo.toml
           rm -f Cargo.toml.bak
-          # Cargo.lock - stateful perl: set flag on name = "pgcli-rs", replace version on next line.
+          # Cargo.lock - stateful perl: set flag on any workspace crate (name = "pgcli-*"), replace version on next line.
           # \r? makes the pattern work on both LF (Linux/macOS) and CRLF (Windows checkout).
-          perl -i.bak -pe 'if (/^name = "pgcli-rs"\r?$/) { $f=1 } elsif ($f) { s/^version = "[^"]*"/version = "'"${VERSION}"'"/; $f=0 }' Cargo.lock
+          perl -i.bak -pe 'if (/^name = "pgcli-[a-z]+"\r?$/) { $f=1 } elsif ($f) { s/^version = "[^"]*"/version = "'"${VERSION}"'"/; $f=0 }' Cargo.lock
           rm -f Cargo.lock.bak
           echo "Version set to ${VERSION}"
           grep '^version' Cargo.toml
@@ -199,13 +199,13 @@ jobs:
         if: matrix.use_cross
         env:
           OPENSSL_VENDORED: "1"
-        run: cross build --release --locked --target ${{ matrix.target }} ${{ matrix.cargo_features }}
+        run: cross build --release --locked -p pgcli-cli --target ${{ matrix.target }} ${{ matrix.cargo_features }}
 
       - name: Build binary (cargo - native)
         if: "!matrix.use_cross"
         env:
           OPENSSL_VENDORED: "1"
-        run: cargo build --release --locked --target ${{ matrix.target }} ${{ matrix.cargo_features }}
+        run: cargo build --release --locked -p pgcli-cli --target ${{ matrix.target }} ${{ matrix.cargo_features }}
 
       # -- Package compressed archive --------------------------------------------
 
