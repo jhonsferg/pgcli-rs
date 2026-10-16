@@ -41,13 +41,3 @@ pub fn export_results(results: &[QueryResult], path: &std::path::Path) -> pgcli_
     println!("Exported to '{}'.", path.display());
     Ok(())
 }
-
-/// Runs `sql` and exports its results to `path`.
-pub async fn export_to_file(
-    client: &tokio_postgres::Client,
-    sql: &str,
-    path: &std::path::Path,
-) -> pgcli_core::Result<()> {
-    let results = pgcli_executor::query::QueryExecutor::execute_batch(client, sql).await?;
-    export_results(&results, path)
-}
