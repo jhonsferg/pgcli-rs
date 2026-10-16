@@ -24,16 +24,16 @@ assignees:
 
 | Field                    | Value                                     |
 | ------------------------ | ----------------------------------------- |
-| pgcli-rs version   | `pgcli-rs --version`                      
+| pgcli-rs version   | `pgcli --version`                      
 | OS                       | e.g. Ubuntu 24.04 / macOS 15 / Windows 11 |
 | Architecture             | e.g. x86_64 / aarch64                     |
 | Shell                    | e.g. bash 5.2 / zsh / fish / PowerShell 7 |
 | Go version (if relevant) | `go version`                              |
 
-## `pgcli-rs --version` output
+## `pgcli --version` output
 
 ```
-paste output of: pgcli-rs --version
+paste output of: pgcli --version
 ```
 
 ## Relevant shell profile snippet
