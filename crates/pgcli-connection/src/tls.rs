@@ -248,6 +248,8 @@ where
 /// Returns `PgCliError::Connection` if any certificate or key file cannot be
 /// read or parsed.
 pub fn build_rustls(config: &TlsConfig) -> Result<RustlsConnector> {
+    use rustls_pki_types::pem::PemObject;
+    use rustls_pki_types::{CertificateDer, PrivateKeyDer};
     use std::sync::Arc;
     use tokio_rustls::rustls::{ClientConfig, RootCertStore};
 
@@ -261,7 +263,7 @@ pub fn build_rustls(config: &TlsConfig) -> Result<RustlsConnector> {
     if let Some(ca_path) = &config.ca_path {
         let ca_data = std::fs::read(ca_path)
             .map_err(|e| PgCliError::Connection(format!("failed to read CA cert: {e}")))?;
-        for cert in rustls_pemfile::certs(&mut ca_data.as_slice()) {
+        for cert in CertificateDer::pem_slice_iter(&ca_data) {
             let cert =
                 cert.map_err(|e| PgCliError::Connection(format!("invalid CA cert PEM: {e}")))?;
             root_store
@@ -278,24 +280,21 @@ pub fn build_rustls(config: &TlsConfig) -> Result<RustlsConnector> {
         if let (Some(cert_path), Some(key_path)) = (&config.cert_path, &config.key_path) {
             let cert_data = std::fs::read(cert_path)
                 .map_err(|e| PgCliError::Connection(format!("failed to read client cert: {e}")))?;
-            let certs = rustls_pemfile::certs(&mut cert_data.as_slice())
+            let certs = CertificateDer::pem_slice_iter(&cert_data)
                 .collect::<std::result::Result<Vec<_>, _>>()
                 .map_err(|e| PgCliError::Connection(format!("invalid client cert PEM: {e}")))?;
 
             let key_data = std::fs::read(key_path)
                 .map_err(|e| PgCliError::Connection(format!("failed to read client key: {e}")))?;
-            let key = rustls_pemfile::pkcs8_private_keys(&mut key_data.as_slice())
-                .next()
-                .transpose()
-                .map_err(|e| PgCliError::Connection(format!("invalid client key PEM: {e}")))?
-                .map(rustls_pki_types::PrivateKeyDer::Pkcs8)
-                .ok_or_else(|| {
-                    PgCliError::Connection(
-                        "no PKCS#8 private key found in key file; convert with: \
-                         openssl pkcs8 -topk8 -nocrypt -in key.pem -out key-pkcs8.pem"
-                            .to_string(),
-                    )
-                })?;
+            // Accepts PKCS#8, PKCS#1 (RSA) and SEC1 (EC) keys.
+            let key = PrivateKeyDer::from_pem_slice(&key_data).map_err(|e| match e {
+                rustls_pki_types::pem::Error::NoItemsFound => PgCliError::Connection(
+                    "no private key found in key file (expected a PKCS#8, PKCS#1 \
+                     or SEC1 PEM block)"
+                        .to_string(),
+                ),
+                other => PgCliError::Connection(format!("invalid client key PEM: {other}")),
+            })?;
 
             builder
                 .with_client_auth_cert(certs, key)
@@ -386,7 +385,7 @@ mod tests {
     fn build_rustls_rejects_invalid_ca_pem() {
         let dir = std::env::temp_dir();
         let path = dir.join("pgcli_rs_test_invalid_ca.pem");
-        // Well-formed PEM markers but non-base64 payload: rustls_pemfile
+        // Well-formed PEM markers but non-base64 payload: the PEM parser
         // recognizes the CERTIFICATE block and fails decoding its contents,
         // unlike plain garbage which it silently skips as "no PEM found".
         std::fs::write(
