@@ -7,6 +7,7 @@ use pgcli_core::error::PgCliError;
 use pgcli_executor::query::QueryExecutor;
 use pgcli_output::formats::{format_result, OutputFormat};
 use pgcli_repl::schema_cache::SchemaCache;
+use tokio_postgres::SimpleQueryMessage;
 
 use crate::session::Session;
 use crate::settings::effective_expanded;
@@ -74,15 +75,26 @@ impl Session<'_> {
             sp.stop();
         }
 
-        // Update transaction status indicator for the prompt.
-        if let Ok(txn_row) = QueryExecutor::execute(
-            self.pool.client(),
-            "SELECT CASE pg_current_xact_id_if_assigned() IS NOT NULL WHEN true THEN '*' ELSE '' END",
-        ).await {
-            if let Some(row) = txn_row.rows.first() {
-                if let Some(val) = row.values.first() {
-                    self.editor.txn_status = val.to_string();
-                }
+        // Update transaction status indicator for the prompt. Outside an
+        // explicit transaction block every statement commits on its own, so the
+        // answer is always empty and asking the server would only cost a round
+        // trip; inside a block, ask with the simple protocol (one round trip).
+        self.txn_block_open = txn_block_open_after(self.txn_block_open, &sql);
+        if !self.txn_block_open {
+            self.editor.txn_status.clear();
+        } else if let Ok(messages) = self
+            .pool
+            .client()
+            .simple_query(
+                "SELECT CASE pg_current_xact_id_if_assigned() IS NOT NULL WHEN true THEN '*' ELSE '' END",
+            )
+            .await
+        {
+            if let Some(status) = messages.iter().find_map(|message| match message {
+                SimpleQueryMessage::Row(row) => row.get(0).map(str::to_string),
+                _ => None,
+            }) {
+                self.editor.txn_status = status;
             }
         }
 
@@ -163,12 +175,10 @@ impl Session<'_> {
                         match self.pool.reconnect().await {
                             Ok(()) => {
                                 eprintln!("Reconnected to \"{}\".", self.pool.config().database);
-                                if let Err(ce) =
-                                    SchemaCache::refresh(&self.schema_cache, self.pool.client())
-                                        .await
-                                {
-                                    tracing::warn!("Schema cache refresh after reconnect: {ce}");
-                                }
+                                SchemaCache::spawn_refresh(
+                                    self.schema_cache.clone(),
+                                    self.pool.shared_client(),
+                                );
                             }
                             Err(re) => {
                                 eprintln!("Reconnect failed: {re}");
@@ -183,5 +193,76 @@ impl Session<'_> {
                 }
             }
         }
+    }
+}
+
+/// Whether an explicit transaction block may be open after running `sql`,
+/// given whether one was open before.
+///
+/// `BEGIN` and `START TRANSACTION` open a block; `COMMIT`, `END`, `ABORT`,
+/// `ROLLBACK` and `PREPARE TRANSACTION` close it, while `ROLLBACK TO
+/// SAVEPOINT` keeps it open. A wrong guess only costs one status query, or
+/// leaves the prompt indicator stale until the next statement.
+fn txn_block_open_after(was_open: bool, sql: &str) -> bool {
+    let mut open = was_open;
+    for statement in pgcli_executor::query::split_statements(sql) {
+        let mut words = statement
+            .split_whitespace()
+            .map(|word| word.trim_end_matches(';').to_ascii_uppercase());
+        match words.next().as_deref() {
+            Some("BEGIN" | "START") => open = true,
+            Some("COMMIT" | "END" | "ABORT") => open = false,
+            Some("ROLLBACK") if words.next().as_deref() != Some("TO") => open = false,
+            Some("PREPARE") if words.next().as_deref() == Some("TRANSACTION") => open = false,
+            _ => {}
+        }
+    }
+    open
+}
+
+#[cfg(test)]
+mod tests {
+    use super::txn_block_open_after;
+
+    #[test]
+    fn autocommit_statements_never_open_a_block() {
+        assert!(!txn_block_open_after(false, "SELECT 1"));
+        assert!(!txn_block_open_after(
+            false,
+            "INSERT INTO t VALUES (1); SELECT 2"
+        ));
+    }
+
+    #[test]
+    fn begin_and_start_open_a_block_until_commit_or_rollback() {
+        assert!(txn_block_open_after(false, "BEGIN"));
+        assert!(txn_block_open_after(
+            false,
+            "start transaction isolation level serializable;"
+        ));
+        assert!(txn_block_open_after(true, "UPDATE t SET x = 1"));
+        assert!(!txn_block_open_after(true, "COMMIT"));
+        assert!(!txn_block_open_after(true, "rollback;"));
+        assert!(!txn_block_open_after(true, "END"));
+        assert!(!txn_block_open_after(true, "PREPARE TRANSACTION 'tx1'"));
+    }
+
+    #[test]
+    fn rollback_to_savepoint_keeps_the_block_open() {
+        assert!(txn_block_open_after(true, "ROLLBACK TO SAVEPOINT s1"));
+    }
+
+    #[test]
+    fn the_last_transaction_statement_on_the_line_wins() {
+        assert!(!txn_block_open_after(
+            false,
+            "BEGIN; INSERT INTO t VALUES (1); COMMIT;"
+        ));
+        assert!(txn_block_open_after(false, "COMMIT; BEGIN"));
+    }
+
+    #[test]
+    fn keywords_inside_strings_do_not_count() {
+        assert!(!txn_block_open_after(false, "SELECT 'BEGIN'"));
     }
 }
