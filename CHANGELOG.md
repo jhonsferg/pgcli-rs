@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- `pgcli --upgrade` downloads the latest release, verifies its SHA-256 against the release `checksums.txt` and replaces the running binary in place; `--upgrade --check` only reports whether a newer release exists.
+- `pgcli upgrade` downloads the latest release, verifies its SHA-256 against the release `checksums.txt` and replaces the running binary in place; `pgcli upgrade --check` only reports whether a newer release exists.
 - Install scripts for Linux/macOS (`install/install.sh`) and Windows (`install/install.ps1`): they download the latest release, verify its SHA-256, and place `pgcli` in `~/.local/bin` (`%USERPROFILE%\.local\bin` on Windows) without touching the shell profile, PATH or registry.
 - Initial project scaffold: all modules stubbed and documented.
 - `PgCliError` unified error type with all required variants.
