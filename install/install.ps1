@@ -261,5 +261,5 @@ Write-Host "  Connect to a database:" -ForegroundColor White
 Write-Host "       pgcli postgresql://user@localhost/dbname" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Upgrade later with:" -ForegroundColor White
-Write-Host "       pgcli --upgrade" -ForegroundColor Cyan
+Write-Host "       pgcli upgrade" -ForegroundColor Cyan
 Write-Host ""
