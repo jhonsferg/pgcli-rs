@@ -1,4 +1,4 @@
-//! Tests for `pgcli --upgrade` against a local HTTP server. No real network.
+//! Tests for `pgcli upgrade` against a local HTTP server. No real network.
 //!
 //! Each test copies the pgcli test binary into a temporary directory and
 //! upgrades that copy, never the cargo build output.
@@ -169,7 +169,7 @@ fn check_reports_a_newer_release_and_changes_nothing() {
     let bin = copy_binary(dir.path());
     let before = std::fs::read(&bin).expect("read");
 
-    let out = run(&bin, &base, &["--upgrade", "--check"]);
+    let out = run(&bin, &base, &["upgrade", "--check"]);
 
     assert!(out.status.success(), "{out:?}");
     assert!(
@@ -189,7 +189,7 @@ fn verified_release_replaces_the_binary() {
     let dir = tempfile::tempdir().expect("tempdir");
     let bin = copy_binary(dir.path());
 
-    let out = run(&bin, &base, &["--upgrade"]);
+    let out = run(&bin, &base, &["upgrade"]);
 
     assert!(out.status.success(), "{out:?}");
     assert!(text(&out).contains("upgraded"), "{}", text(&out));
@@ -206,7 +206,7 @@ fn checksum_mismatch_keeps_the_installed_binary() {
     let bin = copy_binary(dir.path());
     let before = std::fs::read(&bin).expect("read");
 
-    let out = run(&bin, &base, &["--upgrade"]);
+    let out = run(&bin, &base, &["upgrade"]);
 
     assert_eq!(out.status.code(), Some(1), "{out:?}");
     assert!(text(&out).contains("checksum mismatch"), "{}", text(&out));
@@ -223,7 +223,7 @@ fn missing_checksum_entry_refuses_the_upgrade() {
     let bin = copy_binary(dir.path());
     let before = std::fs::read(&bin).expect("read");
 
-    let out = run(&bin, &base, &["--upgrade"]);
+    let out = run(&bin, &base, &["upgrade"]);
 
     assert_eq!(out.status.code(), Some(1), "{out:?}");
     assert!(text(&out).contains("has no SHA-256"), "{}", text(&out));
@@ -240,7 +240,7 @@ fn an_older_release_means_up_to_date() {
     let bin = copy_binary(dir.path());
     let before = std::fs::read(&bin).expect("read");
 
-    let out = run(&bin, &base, &["--upgrade"]);
+    let out = run(&bin, &base, &["upgrade"]);
 
     assert!(out.status.success(), "{out:?}");
     assert!(text(&out).contains("already up to date"), "{}", text(&out));
@@ -248,7 +248,7 @@ fn an_older_release_means_up_to_date() {
 }
 
 #[test]
-fn check_without_upgrade_is_a_usage_error() {
+fn upgrade_flags_do_not_exist_outside_the_subcommand() {
     let out = Command::new(env!("CARGO_BIN_EXE_pgcli"))
         .arg("--check")
         .output()
