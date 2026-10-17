@@ -71,6 +71,13 @@ toml = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
+# Self-upgrade (pgcli --upgrade)
+ureq = { version = "3", features = ["rustls"] }
+flate2 = "1"
+tar = "0.4"
+zip = { version = "9", default-features = false, features = ["deflate"] }
+semver = "1"
+
 # Utilities
 bytes = "1"
 chrono = { version = "0.4", features = ["serde"] }
