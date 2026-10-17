@@ -31,6 +31,10 @@ pub enum PgCliError {
     #[error("export error: {0}")]
     Export(String),
 
+    /// Self-upgrade failure (release lookup, download, checksum or replace).
+    #[error("upgrade error: {0}")]
+    Upgrade(String),
+
     /// User pressed Ctrl-C to interrupt an operation.
     #[error("interrupted")]
     Interrupted,
