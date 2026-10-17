@@ -1,4 +1,4 @@
-//! `--upgrade`: replaces the running pgcli binary with the latest GitHub release.
+//! `pgcli upgrade`: replaces the running pgcli binary with the latest GitHub release.
 //!
 //! Flow: query the latest release, compare versions (semver), download
 //! `checksums.txt` and the archive for this platform, verify the archive's
@@ -34,7 +34,7 @@ fn err(message: impl Into<String>) -> PgCliError {
     PgCliError::Upgrade(message.into())
 }
 
-/// Runs `--upgrade`. With `check` it only reports whether a newer release
+/// Runs `pgcli upgrade`. With `check` it only reports whether a newer release
 /// exists. Blocking: call it outside the async runtime's worker threads.
 ///
 /// # Errors
@@ -58,7 +58,7 @@ pub fn run(check: bool) -> Result<()> {
         return Ok(());
     }
     if check {
-        println!("pgcli {current} -> {latest} is available. Run `pgcli --upgrade` to install it.");
+        println!("pgcli {current} -> {latest} is available. Run `pgcli upgrade` to install it.");
         return Ok(());
     }
 
