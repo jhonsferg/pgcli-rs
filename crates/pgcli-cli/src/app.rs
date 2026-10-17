@@ -12,9 +12,8 @@ use crate::{oneshot, session};
 ///
 /// Returns the first connection, query or I/O error of the selected mode.
 pub async fn run(args: CliArgs) -> pgcli_core::Result<()> {
-    // --upgrade replaces the binary and needs no database connection.
-    if args.upgrade {
-        let check = args.check;
+    // `upgrade` replaces the binary and needs no database connection.
+    if let Some(pgcli_cli::args::Command::Upgrade { check, .. }) = args.subcommand {
         return tokio::task::spawn_blocking(move || crate::upgrade::run(check))
             .await
             .map_err(|e| pgcli_core::error::PgCliError::Upgrade(e.to_string()))?;
