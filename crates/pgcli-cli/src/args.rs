@@ -15,7 +15,8 @@ use std::path::PathBuf;
     version,
     about = "A self-contained PostgreSQL CLI client - no libpq required",
     long_about = None,
-    disable_help_flag = true
+    disable_help_flag = true,
+    disable_help_subcommand = true
 )]
 pub struct CliArgs {
     // -------------------------------------------------------------------------
@@ -219,9 +220,6 @@ pub struct CliArgs {
     #[arg(long)]
     pub stats: bool,
 
-    // -------------------------------------------------------------------------
-    // pgcli-rs maintenance
-    // -------------------------------------------------------------------------
     /// [pgcli-rs extension] Upgrade pgcli to the latest GitHub release. The
     /// SHA-256 from the release checksums is always verified.
     #[arg(long)]
@@ -234,6 +232,28 @@ pub struct CliArgs {
     /// Print help information.
     #[arg(long, action = clap::ArgAction::Help)]
     pub help: Option<bool>,
+
+    /// Maintenance command. A first bare word that names a command runs it;
+    /// any other word is the database name, so a database called `upgrade`
+    /// is reached with `-d upgrade` or a connection URI.
+    #[command(subcommand)]
+    pub subcommand: Option<Command>,
+}
+
+/// pgcli maintenance commands.
+#[derive(Debug, Clone, clap::Subcommand)]
+pub enum Command {
+    /// [pgcli-rs extension] Upgrade pgcli to the latest GitHub release. The
+    /// SHA-256 from the release checksums is always verified.
+    Upgrade {
+        /// Only report whether a newer release exists.
+        #[arg(long)]
+        check: bool,
+
+        /// Print help information.
+        #[arg(long, action = clap::ArgAction::Help)]
+        help: Option<bool>,
+    },
 }
 
 impl CliArgs {
