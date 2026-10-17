@@ -283,7 +283,7 @@ impl ConnectionConfig {
             tls_key: None,
             tls_ca: None,
             timeout_secs: 30,
-            application_name: "pgcli-rs".to_string(),
+            application_name: "pgcli".to_string(),
         }
     }
 }
@@ -583,6 +583,7 @@ mod tests {
         assert_eq!(cfg.host, "localhost");
         assert_eq!(cfg.port, 5432);
         assert_eq!(cfg.timeout_secs, 30);
+        assert_eq!(cfg.application_name, "pgcli");
     }
 
     #[test]
