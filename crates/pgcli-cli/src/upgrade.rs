@@ -125,6 +125,10 @@ pub fn remove_stale_old() {
 }
 
 /// Path the previous binary is moved to when the running one is replaced.
+///
+/// Only the Windows replace path calls it; kept on every platform so its unit
+/// test runs everywhere.
+#[cfg_attr(not(windows), allow(dead_code))]
 fn old_path(exe: &Path) -> PathBuf {
     let name = exe
         .file_name()
