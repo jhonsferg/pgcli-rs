@@ -234,4 +234,4 @@ esac
 printf "  Connect to a database:\n"
 printf "       ${C_CYAN}pgcli postgresql://user@localhost/dbname${C_RESET}\n\n"
 printf "  Upgrade later with:\n"
-printf "       ${C_CYAN}pgcli --upgrade${C_RESET}\n\n"
+printf "       ${C_CYAN}pgcli upgrade${C_RESET}\n\n"
