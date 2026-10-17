@@ -319,6 +319,16 @@ async fn require_mode_never_falls_back_to_plain_text() {
 }
 
 #[tokio::test]
+async fn server_sees_pgcli_as_the_application_name() {
+    let dsn = require_dsn!();
+    let pool = connect(&dsn).await;
+    let result = QueryExecutor::execute(pool.client(), "SHOW application_name")
+        .await
+        .expect("show application_name");
+    assert_eq!(result.rows[0].values[0].to_string(), "pgcli");
+}
+
+#[tokio::test]
 async fn wrong_password_fails_fast_without_retries() {
     let dsn = require_dsn!();
     let mut cfg = ConnectionConfig::from_uri(&dsn).expect("valid DSN");
