@@ -219,6 +219,18 @@ pub struct CliArgs {
     #[arg(long)]
     pub stats: bool,
 
+    // -------------------------------------------------------------------------
+    // pgcli-rs maintenance
+    // -------------------------------------------------------------------------
+    /// [pgcli-rs extension] Upgrade pgcli to the latest GitHub release. The
+    /// SHA-256 from the release checksums is always verified.
+    #[arg(long)]
+    pub upgrade: bool,
+
+    /// [pgcli-rs extension] With --upgrade, only report whether a newer release exists.
+    #[arg(long, requires = "upgrade")]
+    pub check: bool,
+
     /// Print help information.
     #[arg(long, action = clap::ArgAction::Help)]
     pub help: Option<bool>,
