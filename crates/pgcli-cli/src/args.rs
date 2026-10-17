@@ -220,15 +220,6 @@ pub struct CliArgs {
     #[arg(long)]
     pub stats: bool,
 
-    /// [pgcli-rs extension] Upgrade pgcli to the latest GitHub release. The
-    /// SHA-256 from the release checksums is always verified.
-    #[arg(long)]
-    pub upgrade: bool,
-
-    /// [pgcli-rs extension] With --upgrade, only report whether a newer release exists.
-    #[arg(long, requires = "upgrade")]
-    pub check: bool,
-
     /// Print help information.
     #[arg(long, action = clap::ArgAction::Help)]
     pub help: Option<bool>,
@@ -316,6 +307,47 @@ mod tests {
     fn parse_format_flag() {
         let args = CliArgs::parse_from(["pgcli-rs", "--format", "json"]);
         assert_eq!(args.format, "json");
+    }
+
+    #[test]
+    fn upgrade_is_a_subcommand() {
+        let args = CliArgs::parse_from(["pgcli", "upgrade"]);
+        assert!(matches!(
+            args.subcommand,
+            Some(Command::Upgrade { check: false, .. })
+        ));
+        assert!(args.positional_dbname.is_none());
+
+        let args = CliArgs::parse_from(["pgcli", "upgrade", "--check"]);
+        assert!(matches!(
+            args.subcommand,
+            Some(Command::Upgrade { check: true, .. })
+        ));
+    }
+
+    #[test]
+    fn other_bare_words_are_still_the_database_name() {
+        let args = CliArgs::parse_from(["pgcli", "mydb"]);
+        assert!(args.subcommand.is_none());
+        assert_eq!(args.positional_dbname.as_deref(), Some("mydb"));
+
+        // No implicit `help` subcommand: `pgcli help` connects to a database.
+        let args = CliArgs::parse_from(["pgcli", "help"]);
+        assert!(args.subcommand.is_none());
+        assert_eq!(args.positional_dbname.as_deref(), Some("help"));
+    }
+
+    #[test]
+    fn a_database_named_upgrade_is_reached_with_dbname() {
+        let args = CliArgs::parse_from(["pgcli", "-d", "upgrade"]);
+        assert!(args.subcommand.is_none());
+        assert_eq!(args.dbname.as_deref(), Some("upgrade"));
+    }
+
+    #[test]
+    fn upgrade_is_not_a_flag() {
+        assert!(CliArgs::try_parse_from(["pgcli", "--upgrade"]).is_err());
+        assert!(CliArgs::try_parse_from(["pgcli", "--check"]).is_err());
     }
 
     #[test]
