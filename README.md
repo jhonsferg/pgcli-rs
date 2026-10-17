@@ -122,8 +122,8 @@ On Linux and macOS, set them on the shell side of the pipe:
 ### Upgrade
 
 ```sh
-pgcli --upgrade          # download, verify the SHA-256 and replace the binary in place
-pgcli --upgrade --check  # only report whether a newer release exists
+pgcli upgrade            # download, verify the SHA-256 and replace the binary in place
+pgcli upgrade --check    # only report whether a newer release exists
 ```
 
 The running binary is replaced atomically; on Windows the previous
@@ -335,8 +335,15 @@ Sample benchmark output:
 | `--config FILE`       | `~/.config/pgcli-rs/config.toml` | Config file path                                         |
 | `--repeat N`          | `1`                              | Repeat `--command` N times (benchmark mode)              |
 | `--stats`             | -                                | Print latency histogram and throughput after execution   |
-| `--upgrade`           | -                                | Upgrade pgcli to the latest release (SHA-256 verified)   |
-| `--check`             | -                                | With `--upgrade`, only report whether an upgrade exists  |
+
+### pgcli commands
+
+| Command                 | Description                                                          |
+| ----------------------- | -------------------------------------------------------------------- |
+| `pgcli upgrade`         | Upgrade pgcli to the latest release (SHA-256 verified)               |
+| `pgcli upgrade --check` | Only report whether a newer release exists                           |
+
+A database named `upgrade` is reached with `-d upgrade` or a connection URI.
 
 ---
 
