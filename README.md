@@ -89,17 +89,66 @@ cross-platform**.
 
 ## 📦 Installation
 
+### Install script
+
+The installer downloads the latest release, verifies its SHA-256 against the
+release `checksums.txt`, and places the `pgcli` binary in your user binary
+directory. It needs no root or administrator rights and never edits your shell
+profile, PATH or registry: pgcli is a single self-contained binary.
+
+**Linux / macOS** (installs to `~/.local/bin`):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/jhonsferg/pgcli-rs/main/install/install.sh | sh
+```
+
+**Windows PowerShell** (installs to `%USERPROFILE%\.local\bin`):
+
+```powershell
+irm https://raw.githubusercontent.com/jhonsferg/pgcli-rs/main/install/install.ps1 | iex
+```
+
+If that directory is not on your PATH yet, the installer says so; add it
+yourself, or run `pgcli` by its full path.
+
+| Variable            | Default                                  | Description               |
+| ------------------- | ---------------------------------------- | ------------------------- |
+| `PGCLI_INSTALL_DIR` | `~/.local/bin` / `%USERPROFILE%\.local\bin` | Install directory      |
+| `PGCLI_VERSION`     | `latest`                                 | Release tag to install    |
+
+On Linux and macOS, set them on the shell side of the pipe:
+`curl -fsSL .../install.sh | PGCLI_INSTALL_DIR=~/bin sh`.
+
+### Upgrade
+
+```sh
+pgcli --upgrade          # download, verify the SHA-256 and replace the binary in place
+pgcli --upgrade --check  # only report whether a newer release exists
+```
+
+The running binary is replaced atomically; on Windows the previous
+`pgcli.exe` is moved aside and removed on the next run. If the checksum is
+missing or does not match, nothing is changed.
+
 ### Prebuilt binaries
 
-Download from the [Releases](https://github.com/jhonsferg/pgcli-rs/releases) page:
+Download from the [Releases](https://github.com/jhonsferg/pgcli-rs/releases) page
+and verify the archive against `checksums.txt`:
 
-| Platform       | Binary                          |
-| -------------- | ------------------------------- |
-| Linux x86_64   | `pgcli-rs-linux-x86_64.tar.gz`  |
-| Linux ARM64    | `pgcli-rs-linux-aarch64.tar.gz` |
-| macOS x86_64   | `pgcli-rs-macos-x86_64.tar.gz`  |
-| macOS ARM64    | `pgcli-rs-macos-aarch64.tar.gz` |
-| Windows x86_64 | `pgcli-rs-windows-x86_64.zip`   |
+| Platform        | Archive                          |
+| --------------- | -------------------------------- |
+| Linux x86_64    | `pgcli-rs_linux_x86_64.tar.gz`   |
+| Linux ARM64     | `pgcli-rs_linux_aarch64.tar.gz`  |
+| Linux ARMv7     | `pgcli-rs_linux_armv7.tar.gz`    |
+| Linux x86       | `pgcli-rs_linux_386.tar.gz`      |
+| Linux RISC-V 64 | `pgcli-rs_linux_riscv64.tar.gz`  |
+| Linux s390x     | `pgcli-rs_linux_s390x.tar.gz`    |
+| Linux ppc64le   | `pgcli-rs_linux_ppc64le.tar.gz`  |
+| Android ARM64   | `pgcli-rs_android_aarch64.tar.gz`|
+| macOS x86_64    | `pgcli-rs_darwin_x86_64.tar.gz`  |
+| macOS ARM64     | `pgcli-rs_darwin_aarch64.tar.gz` |
+| Windows x86_64  | `pgcli-rs_windows_x86_64.zip`    |
+| Windows ARM64   | `pgcli-rs_windows_arm64.zip`     |
 
 ### Build from source
 
@@ -286,6 +335,8 @@ Sample benchmark output:
 | `--config FILE`       | `~/.config/pgcli-rs/config.toml` | Config file path                                         |
 | `--repeat N`          | `1`                              | Repeat `--command` N times (benchmark mode)              |
 | `--stats`             | -                                | Print latency histogram and throughput after execution   |
+| `--upgrade`           | -                                | Upgrade pgcli to the latest release (SHA-256 verified)   |
+| `--check`             | -                                | With `--upgrade`, only report whether an upgrade exists  |
 
 ---
 
