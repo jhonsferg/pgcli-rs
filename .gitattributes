@@ -1,0 +1,6 @@
+# The install scripts are served raw from GitHub and piped directly into
+# `sh`/`iex`. CRLF line endings would break the POSIX shell script outright
+# (every line gets a stray trailing \r), so pin LF regardless of any
+# contributor's local core.autocrlf setting.
+install/*.sh text eol=lf
+install/*.ps1 text eol=lf
