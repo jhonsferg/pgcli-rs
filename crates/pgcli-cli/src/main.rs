@@ -15,6 +15,7 @@ mod session;
 mod settings;
 mod shell;
 mod sql;
+mod upgrade;
 
 use std::process;
 
@@ -27,6 +28,7 @@ use pgcli_core::error::PgCliError;
 
 #[tokio::main]
 async fn main() {
+    upgrade::remove_stale_old();
     let args = CliArgs::parse();
 
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
