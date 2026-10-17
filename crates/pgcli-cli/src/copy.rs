@@ -51,6 +51,10 @@ pub async fn client_copy(
                 .map_err(pgcli_core::error::PgCliError::Io)?;
             total += chunk.len();
         }
+        // tokio writes files on a background thread: without a flush the last
+        // writes may still be pending when the file is dropped, so a reader (or
+        // the process exiting right after `-c`) could see a truncated file.
+        f.flush().await.map_err(pgcli_core::error::PgCliError::Io)?;
         Ok(format!("COPY: wrote {total} bytes to '{file_path}'"))
     } else if let Some(from_pos) = find_keyword_pos(&spec_upper, " FROM ") {
         let after_from = spec[from_pos + 6..].trim_start();
